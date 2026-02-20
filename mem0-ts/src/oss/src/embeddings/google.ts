@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { Embedder } from "./base";
+import { Embedder, MemoryAction } from "./base";
 import { EmbeddingConfig } from "../types";
 
 export class GoogleEmbedder implements Embedder {
@@ -15,7 +15,7 @@ export class GoogleEmbedder implements Embedder {
     this.embeddingDims = config.embeddingDims || 1536;
   }
 
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string, _memoryAction?: MemoryAction): Promise<number[]> {
     const response = await this.google.models.embedContent({
       model: this.model,
       contents: text,
@@ -24,7 +24,7 @@ export class GoogleEmbedder implements Embedder {
     return response.embeddings![0].values!;
   }
 
-  async embedBatch(texts: string[]): Promise<number[][]> {
+  async embedBatch(texts: string[], _memoryAction?: MemoryAction): Promise<number[][]> {
     const response = await this.google.models.embedContent({
       model: this.model,
       contents: texts,

@@ -13,6 +13,7 @@ import {
   LLMFactory,
   VectorStoreFactory,
   HistoryManagerFactory,
+  RerankerFactory,
 } from "../utils/factory";
 import {
   getFactRetrievalMessages,
@@ -24,6 +25,7 @@ import { DummyHistoryManager } from "../storage/DummyHistoryManager";
 import { Embedder } from "../embeddings/base";
 import { LLM } from "../llms/base";
 import { VectorStore } from "../vector_stores/base";
+import { Reranker } from "../reranker/base";
 import { ConfigManager } from "../config/manager";
 import { MemoryGraph } from "./graph_memory";
 import {
@@ -36,9 +38,36 @@ import { parse_vision_messages } from "../utils/memory";
 import { HistoryManager } from "../storage/base";
 import { captureClientEvent } from "../utils/telemetry";
 
+const PROCEDURAL_MEMORY_SYSTEM_PROMPT = `You are a memory summarization system that records and preserves the complete interaction history between a human and an AI agent. You are provided with the agent's execution history over the past N steps. Your task is to produce a comprehensive summary of the agent's output history that contains every detail necessary for the agent to continue the task without ambiguity. **Every output produced by the agent must be recorded verbatim as part of the summary.**
+
+### Overall Structure:
+- **Overview (Global Metadata):**
+  - **Task Objective**: The overall goal the agent is working to accomplish.
+  - **Progress Status**: The current completion percentage and summary of specific milestones or steps completed.
+
+- **Sequential Agent Actions (Numbered Steps):**
+  Each numbered step must be a self-contained entry that includes all of the following elements:
+
+  1. **Agent Action**: Precisely describe what the agent did (e.g., "Clicked on the 'Blog' link", "Called API to fetch content", "Scraped page data"). Include all parameters, target elements, or methods involved.
+
+  2. **Action Result (Mandatory, Unmodified)**: Immediately follow the agent action with its exact, unaltered output. Record all returned data, responses, HTML snippets, JSON content, or error messages exactly as received.
+
+  3. **Embedded Metadata**: For the same numbered step, include additional context such as:
+     - **Key Findings**: Any important information discovered.
+     - **Navigation History**: For browser agents, detail which pages were visited, including URLs.
+     - **Errors & Challenges**: Document any error messages, exceptions, or challenges.
+     - **Current Context**: Describe the state after the action and what the agent plans to do next.
+
+### Guidelines:
+1. **Preserve Every Output**: The exact output of each agent action is essential. Do not paraphrase or summarize the output. It must be stored as is for later use.
+2. **Chronological Order**: Number the agent actions sequentially in the order they occurred.
+3. **Detail and Precision**: Use exact data: Include URLs, element indexes, error messages, JSON responses, and any other concrete values. Preserve numeric counts and metrics. For any errors, include the full error message.
+4. **Output Only the Summary**: The final output must consist solely of the structured summary with no additional commentary or preamble.`;
+
 export class Memory {
   private config: MemoryConfig;
   private customPrompt: string | undefined;
+  private customUpdateMemoryPrompt: string | undefined;
   private embedder: Embedder;
   private vectorStore: VectorStore;
   private llm: LLM;
@@ -47,6 +76,7 @@ export class Memory {
   private apiVersion: string;
   private graphMemory?: MemoryGraph;
   private enableGraph: boolean;
+  private reranker?: Reranker;
   telemetryId: string;
 
   constructor(config: Partial<MemoryConfig> = {}) {
@@ -54,6 +84,7 @@ export class Memory {
     this.config = ConfigManager.mergeConfig(config);
 
     this.customPrompt = this.config.customPrompt;
+    this.customUpdateMemoryPrompt = this.config.customUpdateMemoryPrompt;
     this.embedder = EmbedderFactory.create(
       this.config.embedder.provider,
       this.config.embedder.config,
@@ -93,6 +124,14 @@ export class Memory {
     // Initialize graph memory if configured
     if (this.enableGraph && this.config.graphStore) {
       this.graphMemory = new MemoryGraph(this.config);
+    }
+
+    // Initialize reranker if configured
+    if (this.config.reranker) {
+      this.reranker = RerankerFactory.create(
+        this.config.reranker.provider,
+        this.config.reranker.config ?? {},
+      );
     }
 
     // Initialize telemetry if vector store is initialized
@@ -142,6 +181,18 @@ export class Memory {
     }
   }
 
+  /**
+   * Detect if memory extraction should use agent-focused prompts.
+   * Returns true when agentId is set AND there are assistant messages.
+   */
+  private _isAgentMemory(
+    messages: Message[],
+    metadata: Record<string, any>,
+  ): boolean {
+    if (!metadata.agentId) return false;
+    return messages.some((m) => m.role === "assistant");
+  }
+
   static fromConfig(configDict: Record<string, any>): Memory {
     try {
       const config = MemoryConfigSchema.parse(configDict);
@@ -187,6 +238,18 @@ export class Memory {
 
     const final_parsedMessages = await parse_vision_messages(parsedMessages);
 
+    // Procedural memory: skip fact extraction, store a single summarized memory
+    if (
+      agentId &&
+      config.memoryType === "procedural_memory"
+    ) {
+      return this._createProceduralMemory(
+        final_parsedMessages,
+        metadata,
+        config.prompt,
+      );
+    }
+
     // Add to vector store
     const vectorStoreResult = await this.addToVectorStore(
       final_parsedMessages,
@@ -211,6 +274,55 @@ export class Memory {
     return {
       results: vectorStoreResult,
       relations: graphResult?.relations,
+    };
+  }
+
+  /**
+   * Create a procedural memory — summarises agent interaction history
+   * into a single memory entry without fact extraction / dedup.
+   * Port of Python _create_procedural_memory.
+   */
+  private async _createProceduralMemory(
+    messages: Message[],
+    metadata: Record<string, any>,
+    customPrompt?: string,
+  ): Promise<SearchResult> {
+    const systemPrompt =
+      customPrompt ?? PROCEDURAL_MEMORY_SYSTEM_PROMPT;
+
+    const llmMessages: Array<{ role: string; content: string }> = [
+      { role: "system", content: systemPrompt },
+      ...messages.map((m) => ({
+        role: m.role,
+        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+      })),
+      {
+        role: "user",
+        content: "Create procedural memory of the above conversation.",
+      },
+    ];
+
+    const rawResponse = await this.llm.generateResponse(llmMessages);
+    const proceduralMemory = removeCodeBlocks(
+      typeof rawResponse === "string" ? rawResponse : rawResponse.content,
+    );
+
+    metadata.memory_type = "procedural_memory";
+    const embedding = await this.embedder.embed(proceduralMemory, "add");
+    const memoryId = await this.createMemory(
+      proceduralMemory,
+      { [proceduralMemory]: embedding },
+      metadata,
+    );
+
+    return {
+      results: [
+        {
+          id: memoryId,
+          memory: proceduralMemory,
+          metadata: { event: "ADD" },
+        },
+      ],
     };
   }
 
@@ -241,6 +353,8 @@ export class Memory {
     }
     const parsedMessages = messages.map((m) => m.content).join("\n");
 
+    const isAgentMem = this._isAgentMemory(messages, metadata);
+
     const [systemPrompt, userPrompt] = this.customPrompt
       ? [
           this.customPrompt.toLowerCase().includes("json")
@@ -248,7 +362,7 @@ export class Memory {
             : `${this.customPrompt}\n\nYou MUST return a valid JSON object with a 'facts' key containing an array of strings.`,
           `Input:\n${parsedMessages}`,
         ]
-      : getFactRetrievalMessages(parsedMessages);
+      : getFactRetrievalMessages(parsedMessages, isAgentMem);
 
     const response = await this.llm.generateResponse(
       [
@@ -277,7 +391,7 @@ export class Memory {
 
     // Create embeddings and search for similar memories
     for (const fact of facts) {
-      const embedding = await this.embedder.embed(fact);
+      const embedding = await this.embedder.embed(fact, "add");
       newMessageEmbeddings[fact] = embedding;
 
       const existingMemories = await this.vectorStore.search(
@@ -304,7 +418,7 @@ export class Memory {
     });
 
     // Get memory update decisions
-    const updatePrompt = getUpdateMemoryMessages(uniqueOldMemories, facts);
+    const updatePrompt = getUpdateMemoryMessages(uniqueOldMemories, facts, this.customUpdateMemoryPrompt);
 
     const updateResponse = await this.llm.generateResponse(
       [{ role: "user", content: updatePrompt }],
@@ -370,6 +484,21 @@ export class Memory {
             });
             break;
           }
+          case "NONE": {
+            // Even if content doesn't change, update session IDs if provided
+            const realMemoryId = tempUuidMapping[action.id];
+            if (realMemoryId && (metadata.agentId || metadata.runId)) {
+              const existingMemory = await this.vectorStore.get(realMemoryId);
+              if (existingMemory) {
+                const updatedMetadata = { ...existingMemory.payload };
+                if (metadata.agentId) updatedMetadata.agentId = metadata.agentId;
+                if (metadata.runId) updatedMetadata.runId = metadata.runId;
+                updatedMetadata.updatedAt = new Date().toISOString();
+                await this.vectorStore.update(realMemoryId, null, updatedMetadata);
+              }
+            }
+            break;
+          }
         }
       } catch (error) {
         console.error(`Error processing memory action: ${error}`);
@@ -426,7 +555,7 @@ export class Memory {
       limit: config.limit,
       has_filters: !!config.filters,
     });
-    const { userId, agentId, runId, limit = 100, filters = {} } = config;
+    const { userId, agentId, runId, limit = 100, filters = {}, threshold, rerank = true } = config;
 
     if (userId) filters.userId = userId;
     if (agentId) filters.agentId = agentId;
@@ -439,7 +568,7 @@ export class Memory {
     }
 
     // Search vector store
-    const queryEmbedding = await this.embedder.embed(query);
+    const queryEmbedding = await this.embedder.embed(query, "search");
     const memories = await this.vectorStore.search(
       queryEmbedding,
       limit,
@@ -465,7 +594,9 @@ export class Memory {
       "createdAt",
       "updatedAt",
     ]);
-    const results = memories.map((mem) => ({
+    const results = memories
+      .filter((mem) => threshold === undefined || (mem.score !== undefined && mem.score >= threshold))
+      .map((mem) => ({
       id: mem.id,
       memory: mem.payload.data,
       hash: mem.payload.hash,
@@ -480,15 +611,25 @@ export class Memory {
       ...(mem.payload.runId && { runId: mem.payload.runId }),
     }));
 
+    // Apply reranking if enabled and reranker is available
+    let finalResults = results;
+    if (rerank && this.reranker && results.length > 0) {
+      try {
+        finalResults = await this.reranker.rerank(query, results, limit);
+      } catch (e) {
+        console.warn("Reranking failed, using original results:", e);
+      }
+    }
+
     return {
-      results,
+      results: finalResults,
       relations: graphResults,
     };
   }
 
   async update(memoryId: string, data: string): Promise<{ message: string }> {
     await this._captureEvent("update", { memory_id: memoryId });
-    const embedding = await this.embedder.embed(data);
+    const embedding = await this.embedder.embed(data, "update");
     await this.updateMemory(memoryId, data, { [data]: embedding });
     return { message: "Memory updated successfully!" };
   }

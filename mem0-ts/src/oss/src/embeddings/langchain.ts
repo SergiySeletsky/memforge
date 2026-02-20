@@ -1,5 +1,5 @@
 import { Embeddings } from "@langchain/core/embeddings";
-import { Embedder } from "./base";
+import { Embedder, MemoryAction } from "./base";
 import { EmbeddingConfig } from "../types";
 
 export class LangchainEmbedder implements Embedder {
@@ -27,7 +27,7 @@ export class LangchainEmbedder implements Embedder {
     this.batchSize = (this.embedderInstance as any).batchSize;
   }
 
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string, _memoryAction?: MemoryAction): Promise<number[]> {
     try {
       // Use embedQuery for single text embedding
       return await this.embedderInstance.embedQuery(text);
@@ -37,7 +37,7 @@ export class LangchainEmbedder implements Embedder {
     }
   }
 
-  async embedBatch(texts: string[]): Promise<number[][]> {
+  async embedBatch(texts: string[], _memoryAction?: MemoryAction): Promise<number[][]> {
     try {
       // Use embedDocuments for batch embedding
       // Langchain's embedDocuments handles batching internally if needed/supported

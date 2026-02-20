@@ -71,32 +71,142 @@ export class Qdrant implements VectorStore {
   private createFilter(filters?: SearchFilters): QdrantFilter | undefined {
     if (!filters) return undefined;
 
-    const conditions: QdrantCondition[] = [];
+    const must: QdrantCondition[] = [];
+    const mustNot: QdrantCondition[] = [];
+    const should: QdrantCondition[] = [];
+
     for (const [key, value] of Object.entries(filters)) {
-      if (
-        typeof value === "object" &&
-        value !== null &&
-        "gte" in value &&
-        "lte" in value
-      ) {
-        conditions.push({
-          key,
-          range: {
-            gte: value.gte,
-            lte: value.lte,
-          },
-        });
-      } else {
-        conditions.push({
-          key,
-          match: {
-            value,
-          },
-        });
+      // Logical operators
+      if (key === "AND" && Array.isArray(value)) {
+        for (const cond of value) {
+          const sub = this._buildConditions(cond);
+          must.push(...sub);
+        }
+        continue;
       }
+      if (key === "OR" && Array.isArray(value)) {
+        for (const cond of value) {
+          const sub = this._buildConditions(cond);
+          should.push(...sub);
+        }
+        continue;
+      }
+      if (key === "NOT" && Array.isArray(value)) {
+        for (const cond of value) {
+          const sub = this._buildConditions(cond);
+          mustNot.push(...sub);
+        }
+        continue;
+      }
+      // Internal $or/$not from _process_metadata_filters
+      if (key === "$or" && Array.isArray(value)) {
+        for (const cond of value) {
+          const sub = this._buildConditions(cond);
+          should.push(...sub);
+        }
+        continue;
+      }
+      if (key === "$not" && Array.isArray(value)) {
+        for (const cond of value) {
+          const sub = this._buildConditions(cond);
+          mustNot.push(...sub);
+        }
+        continue;
+      }
+
+      // Wildcard — match any value (presence check not directly supported, skip filter for this key)
+      if (value === "*") continue;
+
+      // Comparison operators
+      if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+        const ops = Object.keys(value);
+        if (ops.some((op) => ["eq", "ne", "gt", "gte", "lt", "lte", "in", "nin", "contains", "icontains"].includes(op))) {
+          this._addOperatorCondition(key, value, must, mustNot);
+          continue;
+        }
+        // Range shorthand (legacy {gte, lte})
+        if ("gte" in value && "lte" in value) {
+          must.push({ key, range: { gte: value.gte, lte: value.lte } });
+          continue;
+        }
+      }
+
+      // Simple exact match
+      must.push({ key, match: { value } });
     }
 
-    return conditions.length ? { must: conditions } : undefined;
+    const filter: QdrantFilter = {};
+    if (must.length) filter.must = must;
+    if (mustNot.length) filter.must_not = mustNot;
+    if (should.length) filter.should = should;
+    return Object.keys(filter).length ? filter : undefined;
+  }
+
+  /** Build conditions from a single filter object (used for AND/OR/NOT sub-conditions) */
+  private _buildConditions(cond: Record<string, any>): QdrantCondition[] {
+    const results: QdrantCondition[] = [];
+    for (const [k, v] of Object.entries(cond)) {
+      if (v === "*") continue;
+      if (typeof v === "object" && v !== null && !Array.isArray(v)) {
+        const ops = Object.keys(v);
+        if (ops.some((op) => ["eq", "ne", "gt", "gte", "lt", "lte", "in", "nin"].includes(op))) {
+          // For simplicity in sub-conditions, map to must
+          const tmp: QdrantCondition[] = [];
+          this._addOperatorCondition(k, v, tmp, []);
+          results.push(...tmp);
+          continue;
+        }
+        if ("gte" in v && "lte" in v) {
+          results.push({ key: k, range: { gte: v.gte, lte: v.lte } });
+          continue;
+        }
+      }
+      results.push({ key: k, match: { value: v } });
+    }
+    return results;
+  }
+
+  /** Convert comparison operators to Qdrant conditions */
+  private _addOperatorCondition(
+    key: string,
+    ops: Record<string, any>,
+    must: QdrantCondition[],
+    mustNot: QdrantCondition[],
+  ): void {
+    for (const [op, val] of Object.entries(ops)) {
+      switch (op) {
+        case "eq":
+          must.push({ key, match: { value: val } });
+          break;
+        case "ne":
+          mustNot.push({ key, match: { value: val } });
+          break;
+        case "gt":
+          must.push({ key, range: { gt: val } });
+          break;
+        case "gte":
+          must.push({ key, range: { gte: val } });
+          break;
+        case "lt":
+          must.push({ key, range: { lt: val } });
+          break;
+        case "lte":
+          must.push({ key, range: { lte: val } });
+          break;
+        case "in":
+          // Qdrant MatchAny — use match.value with array
+          must.push({ key, match: { value: val } });
+          break;
+        case "nin":
+          mustNot.push({ key, match: { value: val } });
+          break;
+        case "contains":
+        case "icontains":
+          // Qdrant full-text match (requires text index) — approximated with match
+          must.push({ key, match: { value: val } });
+          break;
+      }
+    }
   }
 
   async insert(
@@ -172,6 +282,11 @@ export class Qdrant implements VectorStore {
 
   async deleteCol(): Promise<void> {
     await this.client.deleteCollection(this.collectionName);
+  }
+
+  async reset(): Promise<void> {
+    await this.deleteCol();
+    await this.initialize();
   }
 
   async list(

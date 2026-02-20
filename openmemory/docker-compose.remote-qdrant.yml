@@ -1,0 +1,25 @@
+## docker-compose.remote-qdrant.yml — OpenMemory with external Qdrant
+##
+## Use when Qdrant is hosted externally (e.g. Qdrant Cloud).
+## Set QDRANT_URL in ui/.env or as an environment variable.
+
+services:
+  openmemory:
+    build:
+      context: ui/
+      dockerfile: Dockerfile
+    image: mem0/openmemory:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_USER_ID=${USER:-local-user}
+      - DATABASE_PATH=/app/data/openmemory.db
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - QDRANT_URL=${QDRANT_URL:-}
+    env_file:
+      - ui/.env
+    volumes:
+      - openmemory_data:/app/data
+
+volumes:
+  openmemory_data:

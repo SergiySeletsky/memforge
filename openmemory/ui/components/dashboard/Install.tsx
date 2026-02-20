@@ -47,12 +47,13 @@ export const Install = () => {
   const [copiedTab, setCopiedTab] = useState<string | null>(null);
   const user = process.env.NEXT_PUBLIC_USER_ID || "user";
 
-  const URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8765";
+  // MCP clients need an absolute URL — derive from current origin
+  const URL = typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:3000";
 
   const handleCopy = async (tab: string, isMcp: boolean = false) => {
     const text = isMcp
-      ? `${URL}/mcp/openmemory/sse/${user}`
-      : `npx @openmemory/install local ${URL}/mcp/${tab}/sse/${user} --client ${tab}`;
+      ? `${URL}/api/mcp/openmemory/sse/${user}`
+      : `npx @openmemory/install local ${URL}/api/mcp/${tab}/sse/${user} --client ${tab}`;
 
     try {
       // Try using the Clipboard API first
@@ -132,7 +133,7 @@ export const Install = () => {
               <div className="relative">
                 <pre className="bg-zinc-800 px-4 py-3 rounded-md overflow-x-auto text-sm">
                   <code className="text-gray-300">
-                    {URL}/mcp/openmemory/sse/{user}
+                    {URL}/api/mcp/openmemory/sse/{user}
                   </code>
                 </pre>
                 <div>
@@ -168,7 +169,7 @@ export const Install = () => {
                 <div className="relative">
                   <pre className="bg-zinc-800 px-4 py-3 rounded-md overflow-x-auto text-sm">
                     <code className="text-gray-300">
-                      {`npx @openmemory/install local ${URL}/mcp/${key}/sse/${user} --client ${key}`}
+                      {`npx @openmemory/install local ${URL}/api/mcp/${key}/sse/${user} --client ${key}`}
                     </code>
                   </pre>
                   <div>

@@ -4,12 +4,15 @@ const external = [
   "openai",
   "@anthropic-ai/sdk",
   "groq-sdk",
+  "cohere-ai",
+  "@mistralai/mistralai",
   "uuid",
   "pg",
   "zod",
   "sqlite3",
   "@qdrant/js-client-rest",
   "redis",
+  "chromadb",
 ];
 
 export default defineConfig([

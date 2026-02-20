@@ -6,6 +6,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Providers } from "./providers";
 
+// Force all pages to be dynamically rendered (no static prerender at build time)
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "OpenMemory - Developer Dashboard",
   description: "Manage your OpenMemory integration and stored memories",

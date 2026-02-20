@@ -30,14 +30,13 @@ export const useConfig = (): UseConfigApiReturn => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const dispatch = useDispatch<AppDispatch>();
-  const URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8765";
   
   const fetchConfig = async () => {
     setIsLoading(true);
     dispatch(setConfigLoading());
     
     try {
-      const response = await axios.get(`${URL}/api/v1/config`);
+      const response = await axios.get(`/api/v1/config`);
       dispatch(setConfigSuccess(response.data));
       setIsLoading(false);
     } catch (err: any) {
@@ -54,7 +53,7 @@ export const useConfig = (): UseConfigApiReturn => {
     setError(null);
     
     try {
-      const response = await axios.put(`${URL}/api/v1/config`, config);
+      const response = await axios.put(`/api/v1/config`, config);
       dispatch(setConfigSuccess(response.data));
       setIsLoading(false);
       return response.data;
@@ -72,7 +71,7 @@ export const useConfig = (): UseConfigApiReturn => {
     setError(null);
     
     try {
-      const response = await axios.post(`${URL}/api/v1/config/reset`);
+      const response = await axios.post(`/api/v1/config/reset`);
       dispatch(setConfigSuccess(response.data));
       setIsLoading(false);
       return response.data;
@@ -90,7 +89,7 @@ export const useConfig = (): UseConfigApiReturn => {
     setError(null);
     
     try {
-      const response = await axios.put(`${URL}/api/v1/config/mem0/llm`, llmConfig);
+      const response = await axios.put(`/api/v1/config/mem0/llm`, llmConfig);
       dispatch(updateLLM(response.data));
       setIsLoading(false);
       return response.data;
@@ -107,7 +106,7 @@ export const useConfig = (): UseConfigApiReturn => {
     setError(null);
     
     try {
-      const response = await axios.put(`${URL}/api/v1/config/mem0/embedder`, embedderConfig);
+      const response = await axios.put(`/api/v1/config/mem0/embedder`, embedderConfig);
       dispatch(updateEmbedder(response.data));
       setIsLoading(false);
       return response.data;

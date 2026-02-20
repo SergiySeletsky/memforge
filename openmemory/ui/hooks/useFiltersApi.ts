@@ -32,14 +32,12 @@ export const useFiltersApi = (): UseFiltersApiReturn => {
   const dispatch = useDispatch<AppDispatch>();
   const user_id = useSelector((state: RootState) => state.profile.userId);
 
-  const URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8765";
-
   const fetchCategories = useCallback(async (): Promise<void> => {
     setIsLoading(true);
     dispatch(setCategoriesLoading());
     try {
       const response = await axios.get<CategoriesResponse>(
-        `${URL}/api/v1/memories/categories?user_id=${user_id}`
+        `/api/v1/memories/categories?user_id=${user_id}`
       );
 
       dispatch(setCategoriesSuccess({

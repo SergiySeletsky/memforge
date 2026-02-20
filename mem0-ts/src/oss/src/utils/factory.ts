@@ -29,9 +29,18 @@ import { GoogleLLM } from "../llms/google";
 import { AzureOpenAILLM } from "../llms/azure";
 import { AzureOpenAIEmbedder } from "../embeddings/azure";
 import { LangchainLLM } from "../llms/langchain";
+import { DeepSeekLLM } from "../llms/deepseek";
+import { XAILLM } from "../llms/xai";
+import { TogetherLLM } from "../llms/together";
+import { LMStudioLLM } from "../llms/lmstudio";
 import { LangchainEmbedder } from "../embeddings/langchain";
+import { LMStudioEmbedder } from "../embeddings/lmstudio";
 import { LangchainVectorStore } from "../vector_stores/langchain";
 import { AzureAISearch } from "../vector_stores/azure_ai_search";
+import { ChromaDB as ChromaDBStore } from "../vector_stores/chroma";
+import { Reranker } from "../reranker/base";
+import { LLMReranker } from "../reranker/llm";
+import { CohereReranker } from "../reranker/cohere";
 
 export class EmbedderFactory {
   static create(provider: string, config: EmbeddingConfig): Embedder {
@@ -47,6 +56,8 @@ export class EmbedderFactory {
         return new AzureOpenAIEmbedder(config);
       case "langchain":
         return new LangchainEmbedder(config);
+      case "lmstudio":
+        return new LMStudioEmbedder(config);
       default:
         throw new Error(`Unsupported embedder provider: ${provider}`);
     }
@@ -75,8 +86,30 @@ export class LLMFactory {
         return new MistralLLM(config);
       case "langchain":
         return new LangchainLLM(config);
+      case "deepseek":
+        return new DeepSeekLLM(config);
+      case "xai":
+        return new XAILLM(config);
+      case "together":
+        return new TogetherLLM(config);
+      case "lmstudio":
+        return new LMStudioLLM(config);
       default:
         throw new Error(`Unsupported LLM provider: ${provider}`);
+    }
+  }
+}
+
+export class RerankerFactory {
+  static create(provider: string, config: Record<string, any> = {}): Reranker {
+    switch (provider.toLowerCase()) {
+      case "llm_reranker":
+      case "llm":
+        return new LLMReranker(config);
+      case "cohere":
+        return new CohereReranker(config);
+      default:
+        throw new Error(`Unsupported reranker provider: ${provider}`);
     }
   }
 }
@@ -98,6 +131,9 @@ export class VectorStoreFactory {
         return new VectorizeDB(config as any);
       case "azure-ai-search":
         return new AzureAISearch(config as any);
+      case "chroma":
+      case "chromadb":
+        return new ChromaDBStore(config as any);
       default:
         throw new Error(`Unsupported vector store provider: ${provider}`);
     }

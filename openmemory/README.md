@@ -56,6 +56,13 @@ You can do this in one of the following ways:
   cp ui/.env.example ui/.env
   ```
 
+#### Using LM Studio + remote Qdrant
+
+- In `api/.env`, set `OPENAI_BASE_URL` to your LM Studio OpenAI-compatible server URL (example: `http://host.docker.internal:1234/v1`).
+- Set `OPENAI_CHAT_MODEL` to your loaded chat model (e.g. `gemma-3-4b`).
+- Set `OPENAI_EMBEDDING_MODEL` to your loaded embedding model (e.g. `nomic-embed-text-v1.5`) and set `EMBEDDING_DIMS` to the correct dimension.
+- Set `QDRANT_HOST`/`QDRANT_PORT` (or `QDRANT_URL`) to your Qdrant instance.
+
  - **Using Makefile** (if supported):  
     Run:
   
@@ -82,9 +89,17 @@ make build # builds the mcp server and ui
 make up  # runs openmemory mcp server and ui
 ```
 
+If you are using a remote Qdrant instance and do not want to run the bundled local Qdrant container, use:
+
+```bash
+docker compose -f docker-compose.remote-qdrant.yml up --build
+```
+
 After running these commands, you will have:
 - OpenMemory MCP server running at: http://localhost:8765 (API documentation available at http://localhost:8765/docs)
 - OpenMemory UI running at: http://localhost:3000
+
+If `localhost` doesn’t load on Windows (IPv6/`::1`), use `http://127.0.0.1:8765` and `http://127.0.0.1:3000`.
 
 #### UI not working on `localhost:3000`?
 

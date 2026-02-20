@@ -11,11 +11,16 @@ export interface AddMemoryOptions extends Entity {
   metadata?: Record<string, any>;
   filters?: SearchFilters;
   infer?: boolean;
+  memoryType?: string;
+  prompt?: string;
 }
 
 export interface SearchMemoryOptions extends Entity {
   limit?: number;
   filters?: SearchFilters;
+  threshold?: number;
+  /** Enable/disable reranking (default true if reranker configured) */
+  rerank?: boolean;
 }
 
 export interface GetAllMemoryOptions extends Entity {

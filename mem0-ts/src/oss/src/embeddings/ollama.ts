@@ -1,5 +1,5 @@
 import { Ollama } from "ollama";
-import { Embedder } from "./base";
+import { Embedder, MemoryAction } from "./base";
 import { EmbeddingConfig } from "../types";
 import { logger } from "../utils/logger";
 
@@ -21,7 +21,7 @@ export class OllamaEmbedder implements Embedder {
     });
   }
 
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string, _memoryAction?: MemoryAction): Promise<number[]> {
     try {
       await this.ensureModelExists();
     } catch (err) {
@@ -34,7 +34,7 @@ export class OllamaEmbedder implements Embedder {
     return response.embedding;
   }
 
-  async embedBatch(texts: string[]): Promise<number[][]> {
+  async embedBatch(texts: string[], _memoryAction?: MemoryAction): Promise<number[][]> {
     const response = await Promise.all(texts.map((text) => this.embed(text)));
     return response;
   }

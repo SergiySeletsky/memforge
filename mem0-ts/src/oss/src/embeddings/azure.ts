@@ -1,5 +1,5 @@
 import { AzureOpenAI } from "openai";
-import { Embedder } from "./base";
+import { Embedder, MemoryAction } from "./base";
 import { EmbeddingConfig } from "../types";
 
 export class AzureOpenAIEmbedder implements Embedder {
@@ -23,7 +23,7 @@ export class AzureOpenAIEmbedder implements Embedder {
     this.embeddingDims = config.embeddingDims || 1536;
   }
 
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string, _memoryAction?: MemoryAction): Promise<number[]> {
     const response = await this.client.embeddings.create({
       model: this.model,
       input: text,
@@ -31,7 +31,7 @@ export class AzureOpenAIEmbedder implements Embedder {
     return response.data[0].embedding;
   }
 
-  async embedBatch(texts: string[]): Promise<number[][]> {
+  async embedBatch(texts: string[], _memoryAction?: MemoryAction): Promise<number[][]> {
     const response = await this.client.embeddings.create({
       model: this.model,
       input: texts,

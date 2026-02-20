@@ -78,8 +78,13 @@ export interface MemoryConfig {
   disableHistory?: boolean;
   historyDbPath?: string;
   customPrompt?: string;
+  customUpdateMemoryPrompt?: string;
   graphStore?: GraphStoreConfig;
   enableGraph?: boolean;
+  reranker?: {
+    provider: string;
+    config?: Record<string, any>;
+  };
 }
 
 export interface MemoryItem {
@@ -144,6 +149,7 @@ export const MemoryConfigSchema = z.object({
   }),
   historyDbPath: z.string().optional(),
   customPrompt: z.string().optional(),
+  customUpdateMemoryPrompt: z.string().optional(),
   enableGraph: z.boolean().optional(),
   graphStore: z
     .object({
@@ -169,4 +175,10 @@ export const MemoryConfigSchema = z.object({
     })
     .optional(),
   disableHistory: z.boolean().optional(),
+  reranker: z
+    .object({
+      provider: z.string(),
+      config: z.record(z.string(), z.any()).optional(),
+    })
+    .optional(),
 });

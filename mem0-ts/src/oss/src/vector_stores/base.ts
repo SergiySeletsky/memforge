@@ -14,7 +14,7 @@ export interface VectorStore {
   get(vectorId: string): Promise<VectorStoreResult | null>;
   update(
     vectorId: string,
-    vector: number[],
+    vector: number[] | null,
     payload: Record<string, any>,
   ): Promise<void>;
   delete(vectorId: string): Promise<void>;
@@ -26,4 +26,5 @@ export interface VectorStore {
   getUserId(): Promise<string>;
   setUserId(userId: string): Promise<void>;
   initialize(): Promise<void>;
+  reset?(): Promise<void>;
 }

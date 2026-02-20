@@ -26,7 +26,6 @@ export function FormView({ settings, onChange }: FormViewProps) {
   const [isUploading, setIsUploading] = useReactState(false)
   const [selectedImportFileName, setSelectedImportFileName] = useReactState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8765"
   const userId = useSelector((state: RootState) => state.profile.userId)
 
   const handleOpenMemoryChange = (key: string, value: any) => {
@@ -369,7 +368,7 @@ export function FormView({ settings, onChange }: FormViewProps) {
                 className="bg-zinc-800 hover:bg-zinc-700"
                 onClick={async () => {
                   try {
-                    const res = await fetch(`${API_URL}/api/v1/backup/export`, {
+                    const res = await fetch(`/api/v1/backup/export`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json", Accept: "application/zip" },
                       body: JSON.stringify({ user_id: userId }),
@@ -436,7 +435,7 @@ export function FormView({ settings, onChange }: FormViewProps) {
                       const form = new FormData()
                       form.append("file", file)
                       form.append("user_id", String(userId))
-                      const res = await fetch(`${API_URL}/api/v1/backup/import`, { method: "POST", body: form })
+                      const res = await fetch(`/api/v1/backup/import`, { method: "POST", body: form })
                       if (!res.ok) throw new Error(`Import failed with status ${res.status}`)
                       await res.json()
                       if (fileInputRef.current) fileInputRef.current.value = ""
