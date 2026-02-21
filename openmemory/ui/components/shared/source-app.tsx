@@ -56,6 +56,11 @@ export const constants = {
     icon: <Icon source="/images/augment.png" />,
     iconImage: "/images/augment.png",
   },
+  vscode: {
+    name: "VS Code",
+    icon: <Icon source="/images/vscode.svg" />,
+    iconImage: "/images/vscode.svg",
+  },
   default: {
     name: "Default",
     icon: <BiEdit size={18} className="ml-1" />,

@@ -29,7 +29,7 @@ function MemoryContent({ id }: { id: string }) {
     loadMemory();
   }, []);
 
-  if (isLoading) {
+  if (isLoading || (!memory && !error)) {
     return <MemorySkeleton />;
   }
 

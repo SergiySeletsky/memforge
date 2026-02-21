@@ -108,14 +108,17 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
 
         console.log(`[MCP] search_memory done in ${Date.now() - t0}ms hits=${results.length}`);
 
-        // Log access for each hit
-        const now = new Date().toISOString();
-        for (const r of results) {
+        // Log access for each hit — batch write to avoid concurrent MERGE races
+        if (results.length > 0) {
+          const now = new Date().toISOString();
+          const ids = results.map(r => r.id);
           runWrite(
-            `MATCH (m:Memory {id: $id})
-             OPTIONAL MATCH (a:App {appName: $appName})
-             CREATE (m)-[:ACCESSED {at: $at, accessType: 'search', query: $query}]->(a)`,
-            { id: r.id, appName: clientName, at: now, query }
+            `MERGE (a:App {appName: $appName})
+             WITH a
+             MATCH (u:User {userId: $userId})-[:HAS_MEMORY]->(m:Memory)
+             WHERE m.id IN $ids
+             CREATE (a)-[:ACCESSED {accessedAt: $accessedAt, queryUsed: $query}]->(m)`,
+            { appName: clientName, userId, ids, accessedAt: now, query }
           ).catch(() => {/* non-critical */});
         }
 

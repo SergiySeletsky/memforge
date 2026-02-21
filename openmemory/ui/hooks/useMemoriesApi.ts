@@ -201,8 +201,8 @@ export const useMemoriesApi = (): UseMemoriesApiReturn => {
       const response = await axios.get<SimpleMemory>(
         `/api/v1/memories/${memoryId}?user_id=${user_id}`
       );
-      setIsLoading(false);
       dispatch(setSelectedMemory(response.data));
+      setIsLoading(false);
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to fetch memory';
       setError(errorMessage);
@@ -219,7 +219,7 @@ export const useMemoriesApi = (): UseMemoriesApiReturn => {
     setError(null);
     try {
       const response = await axios.get<AccessLogResponse>(
-        `/api/v1/memories/${memoryId}/access-log?page=${page}&page_size=${pageSize}`
+        `/api/v1/memories/${memoryId}/access-log?page=${page}&page_size=${pageSize}&user_id=${user_id}`
       );
       setIsLoading(false);
       dispatch(setAccessLogs(response.data.logs));

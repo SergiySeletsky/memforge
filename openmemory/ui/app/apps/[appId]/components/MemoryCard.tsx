@@ -61,7 +61,7 @@ export function MemoryCard({
                   Accessed {access_count} times
                 </span>
               ) : (
-                new Date(created_at + "Z").toLocaleDateString("en-US", {
+                new Date(created_at.endsWith("Z") ? created_at : created_at + "Z").toLocaleDateString("en-US", {
                   year: "numeric",
                   month: "short",
                   day: "numeric",
@@ -92,15 +92,21 @@ export function MemoryCard({
               <div className="flex items-center gap-1 bg-zinc-700 px-3 py-1 rounded-lg">
                 <span className="text-sm text-zinc-400">Created by:</span>
                 <div className="w-5 h-5 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden">
-                  <Image
-                    src={
-                      constants[app_name as keyof typeof constants]
-                        ?.iconImage || ""
-                    }
-                    alt="OpenMemory"
-                    width={24}
-                    height={24}
-                  />
+                  {constants[app_name as keyof typeof constants]?.iconImage ? (
+                    <Image
+                      src={
+                        constants[app_name as keyof typeof constants]
+                          .iconImage as string
+                      }
+                      alt={app_name}
+                      width={24}
+                      height={24}
+                    />
+                  ) : (
+                    <span className="text-xs text-zinc-400 uppercase">
+                      {app_name?.charAt(0)}
+                    </span>
+                  )}
                 </div>
                 <p className="text-sm text-zinc-100 font-semibold">
                   {constants[app_name as keyof typeof constants]?.name}

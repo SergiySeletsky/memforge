@@ -37,7 +37,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   // Safe to query related memories; also scope to same user
   const rows = await runRead(
     `MATCH (u:User {userId: $userId})-[:HAS_MEMORY]->(m:Memory {id: $memoryId})
-     MATCH (m)-[:HAS_CATEGORY]->(c:Category)<-[:HAS_CATEGORY]-(other:Memory)
+     MATCH (u)-[:HAS_MEMORY]->(other:Memory)-[:HAS_CATEGORY]->(c:Category)<-[:HAS_CATEGORY]-(m)
      WHERE other.id <> $memoryId AND other.state = 'active'
      WITH other, count(c) AS shared ORDER BY shared DESC LIMIT $limit
      OPTIONAL MATCH (other)-[:CREATED_BY]->(a:App)

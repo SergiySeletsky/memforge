@@ -133,7 +133,7 @@ export const useAppsApi = (): UseAppsApiReturn => {
     dispatch(setCreatedMemoriesLoading());
     try {
       const response = await axios.get<MemoriesResponse>(
-        `/api/v1/apps/${appId}/memories?page=${page}&page_size=${pageSize}`
+        `/api/v1/apps/${appId}/memories?page=${page}&page_size=${pageSize}&user_id=${encodeURIComponent(user_id)}`
       );
       dispatch(setCreatedMemoriesSuccess({
         items: response.data.memories,

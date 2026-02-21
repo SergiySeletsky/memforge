@@ -8,6 +8,7 @@ import { runRead } from "@/lib/db/memgraph";
 type RouteParams = { params: Promise<{ appId: string }> };
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
+  try {
   const { appId } = await params;
   const url = new URL(request.url);
   const page = parseInt(url.searchParams.get("page") || "1", 10);
@@ -15,18 +16,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   const skip = (page - 1) * pageSize;
 
   const rows = await runRead(
-    `MATCH (a:App {appName: $appId})-[acc:ACCESSED]->(m:Memory)
+    `MATCH (a:App)-[acc:ACCESSED]->(m:Memory)
+     WHERE (a.appName = $appId OR a.id = $appId)
+     WITH m, a, acc
      OPTIONAL MATCH (m)-[:HAS_CATEGORY]->(c:Category)
+     WITH m, a, acc, collect(c.name) AS categories
      RETURN m.id AS id, m.content AS content, m.state AS state,
             m.createdAt AS createdAt, m.metadata AS metadata,
-            a.appName AS app_name,
-            collect(c.name) AS categories,
+            a.appName AS app_name, categories,
             acc.accessedAt AS accessed_at, acc.queryUsed AS query_used
-     ORDER BY acc.accessedAt DESC SKIP $skip LIMIT $limit`,
+     ORDER BY accessed_at DESC SKIP $skip LIMIT $limit`,
     { appId, skip, limit: pageSize }
   );
   const countRows = await runRead(
-    `MATCH (:App {appName: $appId})-[acc:ACCESSED]->(:Memory) RETURN count(acc) AS total`,
+    `MATCH (a:App)-[acc:ACCESSED]->(:Memory) WHERE (a.appName = $appId OR a.id = $appId) RETURN count(acc) AS total`,
     { appId }
   );
   const total = (countRows[0] as any)?.total ?? 0;
@@ -51,4 +54,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       access_count: 1,
     })),
   });
+  } catch (e: any) {
+    console.error("[apps/accessed]", e);
+    return NextResponse.json({ detail: e.message }, { status: 500 });
+  }
 }
