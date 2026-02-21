@@ -1,4 +1,4 @@
----
+﻿---
 title: Cohere
 description: "Reranking with Cohere"
 ---
@@ -16,119 +16,95 @@ Cohere offers several reranking models:
 ## Installation
 
 ```bash
-pip install cohere
-```
-
-## Configuration
-
-```python Python
-from mem0 import Memory
-
-config = {
-    "vector_store": {
-        "provider": "chroma",
-        "config": {
-            "collection_name": "my_memories",
-            "path": "./chroma_db"
-        }
-    },
-    "llm": {
-        "provider": "openai",
-        "config": {
-            "model": "gpt-4.1-nano-2025-04-14"
-        }
-    },
-    "reranker": {
-        "provider": "cohere",
-        "config": {
-            "model": "rerank-english-v3.0",
-            "api_key": "your-cohere-api-key",  # or set COHERE_API_KEY
-            "top_k": 5,
-            "return_documents": False,
-            "max_chunks_per_doc": None
-        }
-    }
-}
-
-memory = Memory.from_config(config)
+npm install cohere-ai
 ```
 
 ## Environment Variables
-
-Set your API key as an environment variable:
 
 ```bash
 export COHERE_API_KEY="your-api-key"
 ```
 
+## Configuration
+
+```ts
+import { Memory } from "mem0ai/oss";
+
+const memory = new Memory({
+  vectorStore: {
+    provider: "chroma",
+    config: { collectionName: "my_memories", path: "./chroma_db" },
+  },
+  llm: {
+    provider: "openai",
+    config: { model: "gpt-4o-mini" },
+  },
+  reranker: {
+    provider: "cohere",
+    config: {
+      model: "rerank-english-v3.0",
+      apiKey: process.env.COHERE_API_KEY,
+      topK: 5,
+      returnDocuments: false,
+    },
+  },
+});
+```
+
 ## Usage Example
 
-```python Python
-import os
-from mem0 import Memory
+```ts
+import { Memory } from "mem0ai/oss";
 
-# Set API key
-os.environ["COHERE_API_KEY"] = "your-api-key"
+const memory = new Memory({
+  vectorStore: { provider: "chroma", config: { collectionName: "my_memories", path: "./chroma_db" } },
+  llm: { provider: "openai", config: { model: "gpt-4o-mini" } },
+  reranker: {
+    provider: "cohere",
+    config: { model: "rerank-english-v3.0", apiKey: process.env.COHERE_API_KEY, topK: 3 },
+  },
+});
 
-# Initialize memory with Cohere reranker
-config = {
-    "vector_store": {"provider": "chroma"},
-    "llm": {"provider": "openai", "config": {"model": "gpt-4o-mini"}},
-    "rerank": {
-        "provider": "cohere",
-        "config": {
-            "model": "rerank-english-v3.0",
-            "top_k": 3
-        }
-    }
-}
+// Add memories
+await memory.add([
+  { role: "user", content: "I work as a data scientist at Microsoft" },
+  { role: "user", content: "I specialize in machine learning and NLP" },
+  { role: "user", content: "I enjoy playing tennis on weekends" },
+], { userId: "bob" });
 
-memory = Memory.from_config(config)
-
-# Add memories
-messages = [
-    {"role": "user", "content": "I work as a data scientist at Microsoft"},
-    {"role": "user", "content": "I specialize in machine learning and NLP"},
-    {"role": "user", "content": "I enjoy playing tennis on weekends"}
-]
-
-memory.add(messages, user_id="bob")
-
-# Search with reranking
-results = memory.search("What is the user's profession?", user_id="bob")
-
-for result in results['results']:
-    print(f"Memory: {result['memory']}")
-    print(f"Vector Score: {result['score']:.3f}")
-    print(f"Rerank Score: {result['rerank_score']:.3f}")
-    print()
+// Search with reranking
+const results = await memory.search("What is the user's profession?", { userId: "bob" });
+results.results.forEach((r: any) => {
+  console.log(`Memory: ${r.memory}`);
+  console.log(`Score: ${r.score.toFixed(3)}`);
+});
 ```
 
 ## Multilingual Support
 
 For multilingual applications, use the multilingual model:
 
-```python Python
-config = {
-    "rerank": {
-        "provider": "cohere",
-        "config": {
-            "model": "rerank-multilingual-v3.0",
-            "top_k": 5
-        }
-    }
-}
+```ts
+const memory = new Memory({
+  reranker: {
+    provider: "cohere",
+    config: {
+      model: "rerank-multilingual-v3.0",
+      topK: 5,
+    },
+  },
+});
 ```
 
 ## Configuration Parameters
 
-| Parameter            | Description                      | Type   | Default                 |
-| -------------------- | -------------------------------- | ------ | ----------------------- |
-| `model`              | Cohere rerank model to use       | `str`  | `"rerank-english-v3.0"` |
-| `api_key`            | Cohere API key                   | `str`  | `None`                  |
-| `top_k`              | Maximum documents to return      | `int`  | `None`                  |
-| `return_documents`   | Whether to return document texts | `bool` | `False`                 |
-| `max_chunks_per_doc` | Maximum chunks per document      | `int`  | `None`                  |
+| Parameter            | Description                      | Type      | Default                 |
+| -------------------- | -------------------------------- | --------- | ----------------------- |
+| `model`              | Cohere rerank model to use       | `string`  | `"rerank-english-v3.0"` |
+| `apiKey`             | Cohere API key                   | `string`  | `undefined`             |
+| `topK`               | Maximum documents to return      | `number`  | `undefined`             |
+| `returnDocuments`    | Whether to return document texts | `boolean` | `false`                 |
+| `maxChunksPerDoc`    | Maximum chunks per document      | `number`  | `undefined`             |
 
 ## Features
 

@@ -24,15 +24,14 @@ In this tutorial, we will:
 
 ## Setup
 
-```python
-from mem0 import MemoryClient
-from datetime import datetime, timedelta
+```typescript
+import MemoryClient from 'mem0ai';
 
-client = MemoryClient(api_key="your-api-key")
+const client = new MemoryClient({ apiKey: 'your-api-key' });
 ```
 
 <Note>
-Import `datetime` and `timedelta` to calculate expiration dates. Without these imports, you'll need to manually format ISO timestamps—error-prone and harder to read.
+No special date imports needed in TypeScript — use `new Date()` and `Date.now()` to calculate expiration dates.
 </Note>
 
 ---
@@ -41,17 +40,16 @@ Import `datetime` and `timedelta` to calculate expiration dates. Without these i
 
 By default, all memories persist forever:
 
-```python
-# Store user preference
-client.add("User prefers dark mode", user_id="sarah")
+```typescript
+// Store user preference
+await client.add('User prefers dark mode', { userId: 'sarah' });
 
-# Store session context
-client.add("Currently browsing electronics category", user_id="sarah")
+// Store session context
+await client.add('Currently browsing electronics category', { userId: 'sarah' });
 
-# 6 months later - both still exist
-results = client.get_all(filters={"user_id": "sarah"})
-print(f"Total memories: {len(results['results'])}")
-
+// 6 months later - both still exist
+const results = await client.getAll({ filters: { userId: 'sarah' } });
+console.log(`Total memories: ${results['results'].length}`);
 ```
 
 **Output:**
@@ -79,24 +77,20 @@ Memory bloat degrades search quality. When "User prefers dark mode" competes wit
 
 Set `expiration_date` to make memories temporary:
 
-```python
-from datetime import datetime, timedelta
+```typescript
+// Session context - expires in 7 days
+const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-# Session context - expires in 7 days
-expires_at = (datetime.now() + timedelta(days=7)).isoformat()
+await client.add(
+  'Currently browsing electronics category',
+  { userId: 'sarah', expirationDate: expiresAt }
+);
 
-client.add(
-    "Currently browsing electronics category",
-    user_id="sarah",
-    expiration_date=expires_at
-)
-
-# User preference - no expiration, persists forever
-client.add(
-    "User prefers dark mode",
-    user_id="sarah"
-)
-
+// User preference - no expiration, persists forever
+await client.add(
+  'User prefers dark mode',
+  { userId: 'sarah' }
+);
 ```
 
 <Info icon="check">
@@ -122,11 +116,10 @@ Start conservative with short expiration windows (7 days), then extend them base
 - Important facts and milestones
 - Historical data that matters long-term
 
-```python
-client.add("User prefers email notifications", user_id="sarah")
-client.add("User's birthday is March 15th", user_id="sarah")
-client.add("User completed onboarding on Jan 5th", user_id="sarah")
-
+```typescript
+await client.add('User prefers email notifications', { userId: 'sarah' });
+await client.add("User's birthday is March 15th", { userId: 'sarah' });
+await client.add('User completed onboarding on Jan 5th', { userId: 'sarah' });
 ```
 
 ### Temporary Memories (with expiration_date):
@@ -138,21 +131,18 @@ client.add("User completed onboarding on Jan 5th", user_id="sarah")
 - Recent chat history
 - Cached data
 
-```python
-expires_7d = (datetime.now() + timedelta(days=7)).isoformat()
+```typescript
+const expires7d = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-client.add(
-    "Currently viewing product ABC123",
-    user_id="sarah",
-    expiration_date=expires_7d
-)
+await client.add(
+  'Currently viewing product ABC123',
+  { userId: 'sarah', expirationDate: expires7d }
+);
 
-client.add(
-    "Asked about return policy",
-    user_id="sarah",
-    expiration_date=expires_7d
-)
-
+await client.add(
+  'Asked about return policy',
+  { userId: 'sarah', expirationDate: expires7d }
+);
 ```
 
 ---
@@ -161,18 +151,17 @@ client.add(
 
 Different data needs different lifetimes:
 
-```python
-# Session context - 7 days
-expires_7d = (datetime.now() + timedelta(days=7)).isoformat()
-client.add("Browsing electronics", user_id="sarah", expiration_date=expires_7d)
+```typescript
+// Session context - 7 days
+const expires7d = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+await client.add('Browsing electronics', { userId: 'sarah', expirationDate: expires7d });
 
-# Recent chat - 30 days
-expires_30d = (datetime.now() + timedelta(days=30)).isoformat()
-client.add("User asked about warranty", user_id="sarah", expiration_date=expires_30d)
+// Recent chat - 30 days
+const expires30d = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+await client.add('User asked about warranty', { userId: 'sarah', expirationDate: expires30d });
 
-# Important preference - no expiration
-client.add("User prefers dark mode", user_id="sarah")
-
+// Important preference - no expiration
+await client.add('User prefers dark mode', { userId: 'sarah' });
 ```
 
 ---
@@ -181,34 +170,30 @@ client.add("User prefers dark mode", user_id="sarah")
 
 Tag memories to make filtering easier:
 
-```python
-expires_7d = (datetime.now() + timedelta(days=7)).isoformat()
+```typescript
+const expires7d = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-# Tag session context
-client.add(
-    "Browsing electronics",
-    user_id="sarah",
-    expiration_date=expires_7d,
-    metadata={"type": "session"}
-)
+// Tag session context
+await client.add(
+  'Browsing electronics',
+  { userId: 'sarah', expirationDate: expires7d, metadata: { type: 'session' } }
+);
 
-# Tag preference
-client.add(
-    "User prefers dark mode",
-    user_id="sarah",
-    metadata={"type": "preference"}
-)
+// Tag preference
+await client.add(
+  'User prefers dark mode',
+  { userId: 'sarah', metadata: { type: 'preference' } }
+);
 
-# Query only preferences
-preferences = client.get_all(
-    filters={
-        "AND": [
-            {"user_id": "sarah"},
-            {"metadata": {"type": "preference"}}
-        ]
-    }
-)
-
+// Query only preferences
+const preferences = await client.getAll({
+  filters: {
+    AND: [
+      { userId: 'sarah' },
+      { metadata: { type: 'preference' } }
+    ]
+  }
+});
 ```
 
 ---
@@ -217,18 +202,19 @@ preferences = client.get_all(
 
 See which memories will expire and when:
 
-```python
-results = client.get_all(filters={"user_id": "sarah"})
+```typescript
+const results = await client.getAll({ filters: { userId: 'sarah' } });
 
-for memory in results['results']:
-    exp_date = memory.get('expiration_date')
+for (const memory of results['results']) {
+  const expDate = memory['expiration_date'];
 
-    if exp_date:
-        print(f"Temporary: {memory['memory']}")
-        print(f"  Expires: {exp_date}\\n")
-    else:
-        print(f"Permanent: {memory['memory']}\\n")
-
+  if (expDate) {
+    console.log(`Temporary: ${memory['memory']}`);
+    console.log(`  Expires: ${expDate}\n`);
+  } else {
+    console.log(`Permanent: ${memory['memory']}\n`);
+  }
+}
 ```
 
 **Output:**

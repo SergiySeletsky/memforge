@@ -16,6 +16,8 @@ export class AzureOpenAILLM implements LLM {
     this.client = new AzureOpenAI({
       apiKey: config.apiKey,
       endpoint: endpoint as string,
+      timeout: config.timeout ?? 30_000,   // 30 s per-request limit; prevents indefinite hangs
+      maxRetries: config.maxRetries ?? 1,  // 1 retry on network error
       ...rest,
     });
     this.model = config.model || "gpt-4";
@@ -38,7 +40,8 @@ export class AzureOpenAILLM implements LLM {
         };
       }),
       model: this.model,
-      response_format: responseFormat as { type: "text" | "json_object" },
+      // Azure rejects response_format: json_object when tools are also provided
+      ...(!tools && responseFormat ? { response_format: responseFormat as { type: "text" | "json_object" } } : {}),
       ...(tools && { tools, tool_choice: "auto" }),
     });
 

@@ -24,22 +24,20 @@ We will go through examples in this cookbook while building a company's knowledg
 
 Since we're building a company knowledge base, let's add some employee information:
 
-```python
-from mem0 import MemoryClient
+```typescript
+import MemoryClient from 'mem0ai';
 
-client = MemoryClient(api_key="your-api-key")
-# Add employee info
-client.add("Emma is a software engineer in Seattle", user_id="company_kb")
-client.add("David is a product manager in Austin", user_id="company_kb")
-
+const client = new MemoryClient({ apiKey: process.env.MEM0_API_KEY! });
+// Add employee info
+await client.add([{ role: 'user', content: 'Emma is a software engineer in Seattle' }], { userId: 'company_kb' });
+await client.add([{ role: 'user', content: 'David is a product manager in Austin' }], { userId: 'company_kb' });
 ```
 
 Now let's search for Emma's role:
 
-```python
-results = client.search("What does Emma do?", filters={"user_id": "company_kb"})
-print(results['results'][0]['memory'])
-
+```typescript
+const results = await client.search("What does Emma do?", { filters: { user_id: 'company_kb' } });
+console.log(results.results[0].memory);
 ```
 
 **Output:**
@@ -61,10 +59,9 @@ This works perfectly. Vector search found the memory that semantically matches "
 
 Let's add some information about how the team works together:
 
-```python
-client.add("Emma works with David on the mobile app redesign", user_id="company_kb")
-client.add("David reports to Rachel, who manages the design team", user_id="company_kb")
-
+```typescript
+await client.add([{ role: 'user', content: 'Emma works with David on the mobile app redesign' }], { userId: 'company_kb' });
+await client.add([{ role: 'user', content: 'David reports to Rachel, who manages the design team' }], { userId: 'company_kb' });
 ```
 
 Now we have two pieces of information stored:
@@ -74,15 +71,15 @@ Now we have two pieces of information stored:
 
 Let's try asking something that needs both pieces:
 
-```python
-results = client.search(
-    "Who is Emma's teammate's manager?",
-    filters={"user_id": "company_kb"}
-)
+```typescript
+const results = await client.search(
+  "Who is Emma's teammate's manager?",
+  { filters: { user_id: 'company_kb' } }
+);
 
-for r in results['results']:
-    print(r['memory'])
-
+for (const r of results.results) {
+  console.log(r.memory);
+}
 ```
 
 **Output:**
@@ -109,22 +106,19 @@ Vector search can't traverse relationships. It returns relevant memories, but yo
 
 Let's add the same information with graph memory enabled:
 
-```python
-client.add(
-    "Emma works with David on the mobile app redesign",
-    user_id="company_kb",
-    enable_graph=True
-)
+```typescript
+await client.add(
+  [{ role: 'user', content: 'Emma works with David on the mobile app redesign' }],
+  { userId: 'company_kb', enableGraph: true }
+);
 
-client.add(
-    "David reports to Rachel, who manages the design team",
-    user_id="company_kb",
-    enable_graph=True
-)
-
+await client.add(
+  [{ role: 'user', content: 'David reports to Rachel, who manages the design team' }],
+  { userId: 'company_kb', enableGraph: true }
+);
 ```
 
-When you set `enable_graph=True`, Mem0 extracts entities and relationships:
+When you set `enableGraph: true`, Mem0 extracts entities and relationships:
 
 - `emma --[works_with]--> david`
 - `david --[reports_to]--> rachel`
@@ -132,18 +126,17 @@ When you set `enable_graph=True`, Mem0 extracts entities and relationships:
 
 Now the same query works differently:
 
-```python
-results = client.search(
-    "Who is Emma's teammate's manager?",
-    filters={"user_id": "company_kb"},
-    enable_graph=True
-)
+```typescript
+const results = await client.search(
+  "Who is Emma's teammate's manager?",
+  { filters: { user_id: 'company_kb' }, enableGraph: true }
+);
 
-print(results['results'][0]['memory'])
-print("\\nRelationships found:")
-for rel in results.get('relations', []):
-    print(f"  {rel['source']}, {rel['target']} ({rel['relationship']})")
-
+console.log(results.results[0].memory);
+console.log('\nRelationships found:');
+for (const rel of results.relations ?? []) {
+  console.log(`  ${rel.source}, ${rel.target} (${rel.relationship})`);
+}
 ```
 
 **Output:**
@@ -211,39 +204,34 @@ For our company knowledge base, we'll use both:
 
 Let's build a small company knowledge base with both approaches:
 
-```python
-# Facts about individuals - vector store is fine
-client.add("Emma specializes in React and TypeScript", user_id="company_kb")
-client.add("David has 5 years of product management experience", user_id="company_kb")
+```typescript
+// Facts about individuals - vector store is fine
+await client.add([{ role: 'user', content: 'Emma specializes in React and TypeScript' }], { userId: 'company_kb' });
+await client.add([{ role: 'user', content: 'David has 5 years of product management experience' }], { userId: 'company_kb' });
 
-# Relationships - use graph memory
-client.add(
-    "Emma and David work together on the mobile app",
-    user_id="company_kb",
-    enable_graph=True
-)
+// Relationships - use graph memory
+await client.add(
+  [{ role: 'user', content: 'Emma and David work together on the mobile app' }],
+  { userId: 'company_kb', enableGraph: true }
+);
 
-client.add(
-    "David reports to Rachel",
-    user_id="company_kb",
-    enable_graph=True
-)
+await client.add(
+  [{ role: 'user', content: 'David reports to Rachel' }],
+  { userId: 'company_kb', enableGraph: true }
+);
 
-client.add(
-    "Rachel runs weekly team syncs every Tuesday",
-    user_id="company_kb",
-    enable_graph=True
-)
-
+await client.add(
+  [{ role: 'user', content: 'Rachel runs weekly team syncs every Tuesday' }],
+  { userId: 'company_kb', enableGraph: true }
+);
 ```
 
 Now we can ask different types of questions:
 
-```python
-# Direct fact - vector search
-results = client.search("What are Emma's skills?", filters={"user_id": "company_kb"})
-print(results['results'][0]['memory'])
-
+```typescript
+// Direct fact - vector search
+const facts = await client.search("What are Emma's skills?", { filters: { user_id: 'company_kb' } });
+console.log(facts.results[0].memory);
 ```
 
 **Output:**
@@ -253,15 +241,13 @@ Emma specializes in React and TypeScript
 
 ```
 
-```python
-# Multi-hop relationship - graph search
-results = client.search(
-    "What meetings does Emma's project manager's boss run?",
-    filters={"user_id": "company_kb"},
-    enable_graph=True
-)
-print(results['results'][0]['memory'])
-
+```typescript
+// Multi-hop relationship - graph search
+const graphResults = await client.search(
+  "What meetings does Emma's project manager's boss run?",
+  { filters: { user_id: 'company_kb' }, enableGraph: true }
+);
+console.log(graphResults.results[0].memory);
 ```
 
 **Output:**
@@ -281,7 +267,7 @@ Enable graph memory when your queries need multi-hop traversal: org charts (who 
 
 ## The Tradeoff
 
-Graph memory adds processing time and cost. When you call `client.add()` with `enable_graph=True`, Mem0 makes extra LLM calls to extract entities and relationships.
+Graph memory adds processing time and cost. When you call `client.add()` with `enableGraph: true`, Mem0 makes extra LLM calls to extract entities and relationships.
 
 <Note>
 **Cost consideration:** Graph memory extraction adds ~2-3 extra LLM calls per `add()` operation to identify entities and relationships. Use it selectively—enable graph for organizational structure and long-term relationships, skip it for temporary notes and simple facts.
@@ -289,21 +275,18 @@ Graph memory adds processing time and cost. When you call `client.add()` with `e
 
 Use graph memory when the relationship traversal adds real value. For most use cases, vector search is sufficient and faster.
 
-```python
-# Long-term organizational structure - worth using graph
-client.add(
-    "Emma mentors two junior engineers on the frontend team",
-    user_id="company_kb",
-    enable_graph=True
-)
+```typescript
+// Long-term organizational structure - worth using graph
+await client.add(
+  [{ role: 'user', content: 'Emma mentors two junior engineers on the frontend team' }],
+  { userId: 'company_kb', enableGraph: true }
+);
 
-# Temporary notes - skip graph, not worth the cost
-client.add(
-    "Emma is out sick today",
-    user_id="company_kb",
-    run_id="daily_notes"
-)
-
+// Temporary notes - skip graph, not worth the cost
+await client.add(
+  [{ role: 'user', content: 'Emma is out sick today' }],
+  { userId: 'company_kb', runId: 'daily_notes' }
+);
 ```
 
 ---
@@ -314,20 +297,16 @@ You can enable graph memory in two ways:
 
 **Per-call** (recommended to start):
 
-```python
-client.add("Emma works with David", user_id="company_kb", enable_graph=True)
-client.search("team structure", filters={"user_id": "company_kb"}, enable_graph=True)
+```typescript
+// Per-call (recommended to start):
+await client.add([{ role: 'user', content: 'Emma works with David' }], { userId: 'company_kb', enableGraph: true });
+await client.search('team structure', { filters: { user_id: 'company_kb' }, enableGraph: true });
 
-```
+// Project-wide (if most of your data has relationships):
+await client.project.update({ enableGraph: true });
 
-**Project-wide** (if most of your data has relationships):
-
-```python
-client.project.update(enable_graph=True)
-
-# Now every add uses graph automatically
-client.add("Emma mentors Jordan", user_id="company_kb")
-
+// Now every add uses graph automatically
+await client.add([{ role: 'user', content: 'Emma mentors Jordan' }], { userId: 'company_kb' });
 ```
 
 ---

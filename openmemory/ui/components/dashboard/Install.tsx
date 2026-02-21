@@ -52,8 +52,8 @@ export const Install = () => {
 
   const handleCopy = async (tab: string, isMcp: boolean = false) => {
     const text = isMcp
-      ? `${URL}/api/mcp/openmemory/sse/${user}`
-      : `npx @openmemory/install local ${URL}/api/mcp/${tab}/sse/${user} --client ${tab}`;
+      ? `${URL}/mcp/openmemory/sse/${user}`
+      : `npx @openmemory/install local ${URL}/mcp/${tab}/sse/${user} --client ${tab}`;
 
     try {
       // Try using the Clipboard API first
@@ -133,7 +133,7 @@ export const Install = () => {
               <div className="relative">
                 <pre className="bg-zinc-800 px-4 py-3 rounded-md overflow-x-auto text-sm">
                   <code className="text-gray-300">
-                    {URL}/api/mcp/openmemory/sse/{user}
+                    {URL}/mcp/openmemory/sse/{user}
                   </code>
                 </pre>
                 <div>
@@ -169,7 +169,7 @@ export const Install = () => {
                 <div className="relative">
                   <pre className="bg-zinc-800 px-4 py-3 rounded-md overflow-x-auto text-sm">
                     <code className="text-gray-300">
-                      {`npx @openmemory/install local ${URL}/api/mcp/${key}/sse/${user} --client ${key}`}
+                      {`npx @openmemory/install local ${URL}/mcp/${key}/sse/${user} --client ${key}`}
                     </code>
                   </pre>
                   <div>

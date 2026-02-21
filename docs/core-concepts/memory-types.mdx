@@ -55,26 +55,22 @@ Mem0 stores each layer separately and merges them when you query:
 2. **Promote** – Relevant details persist to session or user memory based on your `user_id`, `session_id`, and metadata.
 3. **Retrieve** – The search pipeline pulls from all layers, ranking user memories first, then session notes, then raw history.
 
-```python
-import os
+```ts
+import MemoryClient from "mem0ai";
 
-from mem0 import Memory
+const memory = new MemoryClient({ apiKey: process.env.MEM0_API_KEY });
 
-memory = Memory(api_key=os.environ["MEM0_API_KEY"])
+// Sticky note: conversation memory
+await memory.add(
+  [{ role: "user", content: "I'm Alex and I prefer boutique hotels." }],
+  { userId: "alex", sessionId: "trip-planning-2025" },
+);
 
-# Sticky note: conversation memory
-memory.add(
-    ["I'm Alex and I prefer boutique hotels."],
-    user_id="alex",
-    session_id="trip-planning-2025",
-)
-
-# Later in the session, pull long-term + session context
-results = memory.search(
-    "Any hotel preferences?",
-    user_id="alex",
-    session_id="trip-planning-2025",
-)
+// Later in the session, pull long-term + session context
+const results = await memory.search(
+  "Any hotel preferences?",
+  { userId: "alex", sessionId: "trip-planning-2025" },
+);
 ```
 
 <Tip>

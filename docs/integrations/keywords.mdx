@@ -1,4 +1,4 @@
----
+﻿---
 title: Keywords AI
 ---
 
@@ -23,99 +23,77 @@ You can get your Mem0 API key, user_id, and org_id from the [Mem0 dashboard](htt
 Install the necessary libraries:
 
 ```bash
-pip install mem0 keywordsai-sdk
+npm install mem0ai openai
 ```
 
 Set up your environment variables:
 
-```python
-import os
-
-# Set your API keys
-os.environ["MEM0_API_KEY"] = "your-mem0-api-key"
-os.environ["KEYWORDSAI_API_KEY"] = "your-keywords-api-key"
-os.environ["KEYWORDSAI_BASE_URL"] = "https://api.keywordsai.co/api/"
+```ts
+// .env
+// MEM0_API_KEY=your-mem0-api-key
+// KEYWORDSAI_API_KEY=your-keywords-api-key
+// KEYWORDSAI_BASE_URL=https://api.keywordsai.co/api/
 ```
 
 ## Basic Integration Example
 
-Here's a simple example of using Mem0 with Keywords AI:
+```ts
+import { Memory } from "mem0ai/oss";
 
-```python
-from mem0 import Memory
-import os
+// Set up Mem0 with Keywords AI as the LLM provider
+const memory = new Memory({
+  llm: {
+    provider: "openai",
+    config: {
+      model: "gpt-4.1-nano-2025-04-14",
+      temperature: 0.0,
+      apiKey: process.env.KEYWORDSAI_API_KEY,
+      openaiBaseUrl: process.env.KEYWORDSAI_BASE_URL,
+    },
+  },
+});
 
-# Configuration
-api_key = os.getenv("MEM0_API_KEY")
-keywordsai_api_key = os.getenv("KEYWORDSAI_API_KEY")
-base_url = os.getenv("KEYWORDSAI_BASE_URL") # "https://api.keywordsai.co/api/"
+// Add a memory
+const result = await memory.add(
+  "I like to take long walks on weekends.",
+  { userId: "alice", metadata: { category: "hobbies" } },
+);
 
-# Set up Mem0 with Keywords AI as the LLM provider
-config = {
-    "llm": {
-        "provider": "openai",
-        "config": {
-            "model": "gpt-4.1-nano-2025-04-14",
-            "temperature": 0.0,
-            "api_key": keywordsai_api_key,
-            "openai_base_url": base_url,
-        },
-    }
-}
-
-# Initialize Memory
-memory = Memory.from_config(config_dict=config)
-
-# Add a memory
-result = memory.add(
-    "I like to take long walks on weekends.",
-    user_id="alice",
-    metadata={"category": "hobbies"},
-)
-
-print(result)
+console.log(result);
 ```
 
 ## Advanced Integration with OpenAI SDK
 
-For more advanced use cases, you can integrate Keywords AI with Mem0 through the OpenAI SDK:
+For more advanced use cases, integrate Keywords AI with Mem0 through the OpenAI SDK:
 
-```python
-from openai import OpenAI
-import os
-import json
+```ts
+import OpenAI from "openai";
 
-# Initialize client
-client = OpenAI(
-    api_key=os.environ.get("KEYWORDSAI_API_KEY"),
-    base_url=os.environ.get("KEYWORDSAI_BASE_URL"),
-)
+const client = new OpenAI({
+  apiKey: process.env.KEYWORDSAI_API_KEY,
+  baseURL: process.env.KEYWORDSAI_BASE_URL,
+});
 
-# Sample conversation messages
-messages = [
-    {"role": "user", "content": "I'm planning to watch a movie tonight. Any recommendations?"},
-    {"role": "assistant", "content": "How about thriller movies? They can be quite engaging."},
-    {"role": "user", "content": "I'm not a big fan of thriller movies but I love sci-fi movies."},
-    {"role": "assistant", "content": "Got it! I'll avoid thriller recommendations and suggest sci-fi movies in the future."}
-]
+const messages = [
+  { role: "user" as const, content: "I'm planning to watch a movie tonight. Any recommendations?" },
+  { role: "assistant" as const, content: "How about thriller movies? They can be quite engaging." },
+  { role: "user" as const, content: "I'm not a big fan of thriller movies but I love sci-fi movies." },
+  { role: "assistant" as const, content: "Got it! I'll avoid thriller recommendations and suggest sci-fi movies in the future." },
+];
 
-# Add memory and generate a response
-response = client.chat.completions.create(
-    model="openai/gpt-4.1-nano",
-    messages=messages,
-    extra_body={
-        "mem0_params": {
-            "user_id": "test_user",
-            "org_id": "org_1",
-            "api_key": os.environ.get("MEM0_API_KEY"),
-            "add_memories": {
-                "messages": messages,
-            },
-        }
-    },
-)
+const response = await client.chat.completions.create({
+  model: "openai/gpt-4.1-nano",
+  messages,
+  // @ts-ignore - Keywords AI extra params
+  mem0_params: {
+    user_id: "test_user",
+    org_id: "org_1",
+    api_key: process.env.MEM0_API_KEY,
+    add_memories: { messages },
+  },
+});
 
-print(json.dumps(response.model_dump(), indent=4))
+console.log(JSON.stringify(response, null, 2));
 ```
 
 For detailed information on this integration, refer to the official [Keywords AI Mem0 integration documentation](https://docs.keywordsai.co/integration/development-frameworks/mem0).
@@ -135,8 +113,7 @@ Integrating Mem0 with Keywords AI provides a powerful combination for building A
   <Card title="OpenAI Agents SDK" icon="cube" href="/integrations/openai-agents-sdk">
     Build monitored agents with OpenAI SDK
   </Card>
-  <Card title="AgentOps Integration" icon="chart-line" href="/integrations/agentops">
-    Monitor agent performance with AgentOps
+  <Card title="Vercel AI SDK" icon="bolt" href="/integrations/vercel-ai-sdk">
+    Add memory to Vercel AI SDK applications
   </Card>
 </CardGroup>
-

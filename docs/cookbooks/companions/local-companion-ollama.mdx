@@ -14,50 +14,55 @@ By using Ollama, you can run Mem0 locally, which allows for greater control over
 
 Before you begin, ensure you have Mem0 and Ollama installed and properly configured on your local machine.
 
+```bash
+npm install mem0ai
+```
+
 ## Full Code Example
 
 Below is the complete code to set up and use Mem0 locally with Ollama:
 
-```python
-from mem0 import Memory
+```typescript
+import { Memory } from 'mem0ai/oss';
 
-config = {
-    "vector_store": {
-        "provider": "qdrant",
-        "config": {
-            "collection_name": "test",
-            "host": "localhost",
-            "port": 6333,
-            "embedding_model_dims": 768,  # Change this according to your local model's dimensions
-        },
+const config = {
+  vectorStore: {
+    provider: 'qdrant',
+    config: {
+      collectionName: 'test',
+      host: 'localhost',
+      port: 6333,
+      embeddingModelDims: 768, // Change this according to your local model's dimensions
     },
-    "llm": {
-        "provider": "ollama",
-        "config": {
-            "model": "llama3.1:latest",
-            "temperature": 0,
-            "max_tokens": 2000,
-            "ollama_base_url": "http://localhost:11434",  # Ensure this URL is correct
-        },
+  },
+  llm: {
+    provider: 'ollama',
+    config: {
+      model: 'llama3.1:latest',
+      temperature: 0,
+      maxTokens: 2000,
+      ollamaBaseUrl: 'http://localhost:11434', // Ensure this URL is correct
     },
-    "embedder": {
-        "provider": "ollama",
-        "config": {
-            "model": "nomic-embed-text:latest",
-            # Alternatively, you can use "snowflake-arctic-embed:latest"
-            "ollama_base_url": "http://localhost:11434",
-        },
+  },
+  embedder: {
+    provider: 'ollama',
+    config: {
+      model: 'nomic-embed-text:latest',
+      // Alternatively, you can use 'snowflake-arctic-embed:latest'
+      ollamaBaseUrl: 'http://localhost:11434',
     },
-}
+  },
+};
 
-# Initialize Memory with the configuration
-m = Memory.from_config(config)
+// Initialize Memory with the configuration
+const memory = new Memory(config);
 
-# Add a memory
-m.add("I'm visiting Paris", user_id="john")
+// Add a memory
+await memory.add("I'm visiting Paris", { userId: 'john' });
 
-# Retrieve memories
-memories = m.get_all(user_id="john")
+// Retrieve memories
+const memories = await memory.getAll({ userId: 'john' });
+console.log(memories);
 ```
 
 ## Key Points

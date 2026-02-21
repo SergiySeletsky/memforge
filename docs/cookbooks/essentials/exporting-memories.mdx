@@ -12,11 +12,10 @@ This cookbook shows you how to retrieve and export your data for inspection, mig
 
 ## Setup
 
-```python
-from mem0 import MemoryClient
+```typescript
+import MemoryClient from 'mem0ai';
 
-client = MemoryClient(api_key="your-api-key")
-
+const client = new MemoryClient({ apiKey: 'your-api-key' });
 ```
 
 <Note>
@@ -25,28 +24,24 @@ Your API key needs export permissions to download memory data. Check your projec
 
 Let's add some sample memories to work with:
 
-```python
-# Dev's work history
-client.add(
-    "Dev works at TechCorp as a senior engineer",
-    user_id="dev",
-    metadata={"type": "professional"}
-)
+```typescript
+// Dev's work history
+await client.add(
+  'Dev works at TechCorp as a senior engineer',
+  { userId: 'dev', metadata: { type: 'professional' } }
+);
 
-# Arjun's preferences
-client.add(
-    "Arjun prefers morning meetings and async communication",
-    user_id="arjun",
-    metadata={"type": "preference"}
-)
+// Arjun's preferences
+await client.add(
+  'Arjun prefers morning meetings and async communication',
+  { userId: 'arjun', metadata: { type: 'preference' } }
+);
 
-# Carl's project notes
-client.add(
-    "Carl is leading the API redesign project, targeting Q2 launch",
-    user_id="carl",
-    metadata={"type": "project"}
-)
-
+// Carl's project notes
+await client.add(
+  'Carl is leading the API redesign project, targeting Q2 launch',
+  { userId: 'carl', metadata: { type: 'project' } }
+);
 ```
 
 ---
@@ -55,15 +50,14 @@ client.add(
 
 Use `get_all()` with filters to retrieve everything for a specific user:
 
-```python
-dev_memories = client.get_all(
-    filters={"user_id": "dev"},
-    page_size=50
-)
+```typescript
+const devMemories = await client.getAll({
+  filters: { userId: 'dev' },
+  pageSize: 50
+});
 
-print(f"Total memories: {dev_memories['count']}")
-print(f"First memory: {dev_memories['results'][0]['memory']}")
-
+console.log(`Total memories: ${devMemories['count']}`);
+console.log(`First memory: ${devMemories['results'][0]['memory']}`);
 ```
 
 **Output:**
@@ -80,19 +74,19 @@ First memory: Dev works at TechCorp as a senior engineer
 
 You can filter by metadata to get specific types:
 
-```python
-carl_projects = client.get_all(
-    filters={
-        "AND": [
-            {"user_id": "carl"},
-            {"metadata": {"type": "project"}}
-        ]
-    }
-)
+```typescript
+const carlProjects = await client.getAll({
+  filters: {
+    AND: [
+      { userId: 'carl' },
+      { metadata: { type: 'project' } }
+    ]
+  }
+});
 
-for memory in carl_projects['results']:
-    print(memory['memory'])
-
+for (const memory of carlProjects['results']) {
+  console.log(memory['memory']);
+}
 ```
 
 **Output:**
@@ -108,16 +102,15 @@ Carl is leading the API redesign project, targeting Q2 launch
 
 When you need semantic search instead of retrieving everything, use `search()`:
 
-```python
-results = client.search(
-    query="What does Dev do for work?",
-    filters={"user_id": "dev"},
-    top_k=5
-)
+```typescript
+const results = await client.search(
+  'What does Dev do for work?',
+  { filters: { userId: 'dev' }, topK: 5 }
+);
 
-for result in results['results']:
-    print(f"{result['memory']} (score: {result['score']:.2f})")
-
+for (const result of results['results']) {
+  console.log(`${result['memory']} (score: ${result['score'].toFixed(2)})`);
+}
 ```
 
 **Output:**
@@ -137,39 +130,37 @@ For migrations or compliance, you can export memories into a structured schema u
 
 ### Step 1: Define the schema
 
-```python
-professional_profile_schema = {
-    "properties": {
-        "full_name": {
-            "type": "string",
-            "description": "The person's full name"
-        },
-        "current_role": {
-            "type": "string",
-            "description": "Current job title or role"
-        },
-        "company": {
-            "type": "string",
-            "description": "Current employer"
-        }
+```typescript
+const professionalProfileSchema = {
+  properties: {
+    full_name: {
+      type: 'string' as const,
+      description: "The person's full name"
     },
-    "title": "ProfessionalProfile",
-    "type": "object"
-}
-
+    current_role: {
+      type: 'string' as const,
+      description: 'Current job title or role'
+    },
+    company: {
+      type: 'string' as const,
+      description: 'Current employer'
+    }
+  },
+  title: 'ProfessionalProfile',
+  type: 'object' as const
+};
 ```
 
 ### Step 2: Create export job
 
-```python
-export_job = client.create_memory_export(
-    schema=professional_profile_schema,
-    filters={"user_id": "dev"}
-)
+```typescript
+const exportJob = await client.createMemoryExport({
+  schema: professionalProfileSchema,
+  filters: { userId: 'dev' }
+});
 
-print(f"Export ID: {export_job['id']}")
-print(f"Status: {export_job['status']}")
-
+console.log(`Export ID: ${exportJob['id']}`);
+console.log(`Status: ${exportJob['status']}`);
 ```
 
 **Output:**
@@ -186,14 +177,13 @@ Status: processing
 
 ### Step 3: Download the export
 
-```python
-# Get by ID
-export_data = client.get_memory_export(
-    memory_export_id=export_job['id']
-)
+```typescript
+// Get by ID
+const exportData = await client.getMemoryExport({
+  memoryExportId: exportJob['id']
+});
 
-print(export_data['data'])
-
+console.log(exportData['data']);
 ```
 
 **Output:**
@@ -209,14 +199,13 @@ print(export_data['data'])
 
 You can also retrieve exports by filters:
 
-```python
-# Get latest export matching filters
-export_by_filters = client.get_memory_export(
-    filters={"user_id": "dev"}
-)
+```typescript
+// Get latest export matching filters
+const exportByFilters = await client.getMemoryExport({
+  filters: { userId: 'dev' }
+});
 
-print(export_by_filters['data'])
-
+console.log(exportByFilters['data']);
 ```
 
 ---
@@ -225,17 +214,16 @@ print(export_by_filters['data'])
 
 Guide how Mem0 resolves conflicts or formats the export:
 
-```python
-export_with_instructions = client.create_memory_export(
-    schema=professional_profile_schema,
-    filters={"user_id": "arjun"},
-    export_instructions="""
+```typescript
+const exportWithInstructions = await client.createMemoryExport({
+  schema: professionalProfileSchema,
+  filters: { userId: 'arjun' },
+  exportInstructions: `
 1. Use the most recent information if there are conflicts
 2. Only include confirmed facts, not speculation
 3. Return null for missing fields rather than guessing
-"""
-)
-
+`
+});
 ```
 
 <Tip>

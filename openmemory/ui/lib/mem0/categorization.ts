@@ -1,20 +1,32 @@
 /**
  * Auto-categorization — port of openmemory/api/app/utils/categorization.py
  *
- * Uses OpenAI to classify memory content into categories.
+ * Uses OpenAI (or Azure OpenAI) to classify memory content into categories.
  * Best-effort: silently returns [] on failure.
  */
-import OpenAI from "openai";
+import OpenAI, { AzureOpenAI } from "openai";
 import { MEMORY_CATEGORIZATION_PROMPT } from "./prompts";
 
 let _openaiClient: OpenAI | null = null;
 
 function getOpenAIClient(): OpenAI {
   if (!_openaiClient) {
-    _openaiClient = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      baseURL: process.env.OPENAI_BASE_URL || undefined,
-    });
+    const azureKey = process.env.LLM_AZURE_OPENAI_API_KEY;
+    const azureEndpoint = process.env.LLM_AZURE_ENDPOINT;
+    const azureApiVersion = process.env.LLM_AZURE_API_VERSION || "2025-01-01-preview";
+
+    if (azureKey && azureEndpoint) {
+      _openaiClient = new AzureOpenAI({
+        apiKey: azureKey,
+        endpoint: azureEndpoint,
+        apiVersion: azureApiVersion,
+      });
+    } else {
+      _openaiClient = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+        baseURL: process.env.OPENAI_BASE_URL || undefined,
+      });
+    }
   }
   return _openaiClient;
 }
@@ -22,6 +34,7 @@ function getOpenAIClient(): OpenAI {
 function getCategorizationModel(): string {
   return (
     process.env.OPENMEMORY_CATEGORIZATION_MODEL ||
+    process.env.LLM_AZURE_DEPLOYMENT ||
     process.env.OPENAI_CHAT_MODEL ||
     "gpt-4o-mini"
   );

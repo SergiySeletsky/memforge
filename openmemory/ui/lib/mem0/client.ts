@@ -16,11 +16,11 @@ let Memory: any;
 try {
   // Dynamic import so the server doesn't crash if mem0ai isn't available yet
   Memory = require("mem0ai/oss").Memory;
-} catch {
+} catch (e: any) {
   // Will be set lazily on first use
+  console.error("Initial mem0ai/oss load failed:", e?.message, e?.stack?.split("\n").slice(0, 3).join(" | "));
   Memory = null;
 }
-
 let _memoryClient: any = null;
 let _configHash: string | null = null;
 
@@ -82,6 +82,110 @@ function fixOllamaUrls(section: Record<string, any>): Record<string, any> {
 /**
  * Build default memory configuration from environment variables.
  */
+/**
+ * Translate a Python-style snake_case LLM config (from DB or old format) into
+ * the camelCase format expected by the TypeScript mem0ai/oss SDK.
+ */
+function translateLlmConfig(provider: string, snakeCfg: Record<string, any>): Record<string, any> {
+  if (provider === "groq") {
+    return {
+      model: snakeCfg.model || "llama-3.1-8b-instant",
+      apiKey: snakeCfg.api_key || snakeCfg.apiKey || "env:GROQ_API_KEY",
+    };
+  }
+  if (provider === "azure_openai") {
+    const az = snakeCfg.azure_kwargs || {};
+    return {
+      model: snakeCfg.model,
+      apiKey: az.api_key || snakeCfg.api_key,
+      modelProperties: {
+        endpoint: az.azure_endpoint || snakeCfg.azure_endpoint,
+        deployment: az.azure_deployment || snakeCfg.azure_deployment || snakeCfg.model,
+        apiVersion: az.api_version || snakeCfg.api_version,
+      },
+    };
+  }
+  if (provider === "ollama") {
+    return {
+      model: snakeCfg.model,
+      baseURL: snakeCfg.ollama_base_url || snakeCfg.baseURL || "http://localhost:11434/v1",
+      apiKey: "ollama",
+    };
+  }
+  if (provider === "lmstudio") {
+    return {
+      model: snakeCfg.model,
+      apiKey: snakeCfg.api_key || snakeCfg.apiKey || "lm-studio",
+      baseURL: snakeCfg.lmstudio_base_url || snakeCfg.baseURL || "http://localhost:1234/v1",
+    };
+  }
+  // openai / default
+  return {
+    model: snakeCfg.model,
+    apiKey: snakeCfg.api_key || snakeCfg.apiKey || "env:OPENAI_API_KEY",
+    ...(snakeCfg.openai_base_url || snakeCfg.baseURL
+      ? { baseURL: snakeCfg.openai_base_url || snakeCfg.baseURL }
+      : {}),
+  };
+}
+
+/**
+ * Translate a Python-style snake_case embedder config into camelCase SDK format.
+ */
+function translateEmbedderConfig(provider: string, snakeCfg: Record<string, any>): Record<string, any> {
+  const dims = snakeCfg.embedding_dims || snakeCfg.embeddingDims || 1536;
+  if (provider === "azure_openai") {
+    const az = snakeCfg.azure_kwargs || {};
+    return {
+      model: snakeCfg.model,
+      apiKey: az.api_key || snakeCfg.api_key || snakeCfg.apiKey,
+      embeddingDims: dims,
+      modelProperties: {
+        endpoint: az.azure_endpoint || snakeCfg.azure_endpoint,
+        deployment: az.azure_deployment || snakeCfg.azure_deployment || snakeCfg.model,
+        apiVersion: az.api_version || snakeCfg.api_version,
+      },
+    };
+  }
+  if (provider === "ollama") {
+    return {
+      model: snakeCfg.model,
+      url: snakeCfg.ollama_base_url || snakeCfg.url || "http://localhost:11434/v1",
+      embeddingDims: dims,
+    };
+  }
+  if (provider === "lmstudio") {
+    return {
+      model: snakeCfg.model,
+      apiKey: snakeCfg.api_key || snakeCfg.apiKey || "lm-studio",
+      url: snakeCfg.lmstudio_base_url || snakeCfg.url || "http://localhost:1234/v1",
+      embeddingDims: dims,
+    };
+  }
+  // openai / default
+  return {
+    model: snakeCfg.model,
+    apiKey: snakeCfg.api_key || snakeCfg.apiKey || "env:OPENAI_API_KEY",
+    ...(snakeCfg.embedding_dims || snakeCfg.embeddingDims ? { embeddingDims: dims } : {}),
+  };
+}
+
+/**
+ * Translate a Python-style snake_case vector_store config into camelCase SDK format.
+ */
+function translateVectorStoreConfig(snakeCfg: Record<string, any>): Record<string, any> {
+  const dims = snakeCfg.embedding_model_dims || snakeCfg.embeddingModelDims || 1536;
+  return {
+    collectionName: snakeCfg.collection_name || snakeCfg.collectionName || "openmemory",
+    host: snakeCfg.host,
+    port: snakeCfg.port,
+    url: snakeCfg.url,
+    apiKey: snakeCfg.apiKey || snakeCfg.api_key,
+    embeddingModelDims: dims,
+    ...(snakeCfg.path ? { path: snakeCfg.path } : {}),
+  };
+}
+
 export function getDefaultMemoryConfig(): Record<string, any> {
   const embeddingDimsStr = process.env.EMBEDDING_DIMS;
   let embeddingModelDims = 1536;
@@ -105,102 +209,40 @@ export function getDefaultMemoryConfig(): Record<string, any> {
     } catch { /* ignore */ }
   }
 
-  // Detect vector store from environment
+  // Detect vector store — camelCase keys required by TypeScript SDK
   let vectorStoreProvider = "qdrant";
-  let vectorStoreConfig: Record<string, any> = {
-    collection_name: "openmemory",
-    host: "mem0_store",
-  };
+  let vectorStoreConfig: Record<string, any>;
 
   if (process.env.CHROMA_HOST && process.env.CHROMA_PORT) {
     vectorStoreProvider = "chroma";
     vectorStoreConfig = {
-      collection_name: "openmemory",
+      collectionName: "openmemory",
       host: process.env.CHROMA_HOST,
       port: parseInt(process.env.CHROMA_PORT, 10),
-    };
-  } else if (process.env.QDRANT_HOST && process.env.QDRANT_PORT) {
-    vectorStoreProvider = "qdrant";
-    vectorStoreConfig = {
-      collection_name: "openmemory",
-      host: process.env.QDRANT_HOST,
-      port: parseInt(process.env.QDRANT_PORT, 10),
-      embedding_model_dims: embeddingModelDims,
     };
   } else if (process.env.REDIS_URL) {
     vectorStoreProvider = "redis";
     vectorStoreConfig = {
-      collection_name: "openmemory",
-      redis_url: process.env.REDIS_URL,
+      collectionName: "openmemory",
+      redisUrl: process.env.REDIS_URL,
     };
-  } else if (process.env.PG_HOST && process.env.PG_PORT) {
-    vectorStoreProvider = "pgvector";
+  } else if (process.env.QDRANT_HOST && process.env.QDRANT_PORT) {
+    vectorStoreProvider = "qdrant";
     vectorStoreConfig = {
-      collection_name: "openmemory",
-      host: process.env.PG_HOST,
-      port: parseInt(process.env.PG_PORT, 10),
-      dbname: process.env.PG_DB || "mem0",
-      user: process.env.PG_USER || "mem0",
-      password: process.env.PG_PASSWORD || "mem0",
-    };
-  } else if (
-    process.env.WEAVIATE_CLUSTER_URL ||
-    (process.env.WEAVIATE_HOST && process.env.WEAVIATE_PORT)
-  ) {
-    vectorStoreProvider = "weaviate";
-    let clusterUrl = process.env.WEAVIATE_CLUSTER_URL;
-    if (!clusterUrl) {
-      const wHost = process.env.WEAVIATE_HOST!;
-      const wPort = parseInt(process.env.WEAVIATE_PORT!, 10);
-      clusterUrl = `http://${wHost}:${wPort}`;
-    }
-    vectorStoreConfig = {
-      collection_name: "openmemory",
-      cluster_url: clusterUrl,
-    };
-  } else if (process.env.MILVUS_HOST && process.env.MILVUS_PORT) {
-    vectorStoreProvider = "milvus";
-    const mHost = process.env.MILVUS_HOST;
-    const mPort = parseInt(process.env.MILVUS_PORT, 10);
-    vectorStoreConfig = {
-      collection_name: "openmemory",
-      url: `http://${mHost}:${mPort}`,
-      token: process.env.MILVUS_TOKEN || "",
-      db_name: process.env.MILVUS_DB_NAME || "",
-      embedding_model_dims: embeddingModelDims,
-      metric_type: "COSINE",
-    };
-  } else if (process.env.ELASTICSEARCH_HOST && process.env.ELASTICSEARCH_PORT) {
-    vectorStoreProvider = "elasticsearch";
-    vectorStoreConfig = {
-      collection_name: "openmemory",
-      host: `http://${process.env.ELASTICSEARCH_HOST}`,
-      port: parseInt(process.env.ELASTICSEARCH_PORT, 10),
-      user: process.env.ELASTICSEARCH_USER || "elastic",
-      password: process.env.ELASTICSEARCH_PASSWORD || "changeme",
-      verify_certs: false,
-      use_ssl: false,
-      embedding_model_dims: embeddingModelDims,
-    };
-  } else if (process.env.OPENSEARCH_HOST && process.env.OPENSEARCH_PORT) {
-    vectorStoreProvider = "opensearch";
-    vectorStoreConfig = {
-      collection_name: "openmemory",
-      host: process.env.OPENSEARCH_HOST,
-      port: parseInt(process.env.OPENSEARCH_PORT, 10),
-    };
-  } else if (process.env.FAISS_PATH) {
-    vectorStoreProvider = "faiss";
-    vectorStoreConfig = {
-      collection_name: "openmemory",
-      path: process.env.FAISS_PATH,
-      embedding_model_dims: embeddingModelDims,
-      distance_strategy: "cosine",
+      collectionName: "openmemory",
+      host: process.env.QDRANT_HOST,
+      port: parseInt(process.env.QDRANT_PORT, 10),
+      embeddingModelDims: embeddingModelDims,
     };
   } else {
-    // Default: Qdrant
-    vectorStoreConfig.port = 6333;
-    vectorStoreConfig.embedding_model_dims = embeddingModelDims;
+    // Default: Qdrant on mem0_store (Docker compose) or localhost
+    vectorStoreProvider = "qdrant";
+    vectorStoreConfig = {
+      collectionName: "openmemory",
+      host: "mem0_store",
+      port: 6333,
+      embeddingModelDims: embeddingModelDims,
+    };
   }
 
   console.log(`Auto-detected vector store: ${vectorStoreProvider}`);
@@ -230,86 +272,111 @@ export function getDefaultMemoryConfig(): Record<string, any> {
     embedderProvider = "openai";
   }
 
-  // Build LLM config
+  // Build LLM config — camelCase keys required by TypeScript SDK
   let llmConfig: Record<string, any>;
   if (llmProvider === "azure_openai") {
+    const azureLlmModel = process.env.LLM_AZURE_DEPLOYMENT || llmModel;
     llmConfig = {
-      model: llmModel,
-      temperature: 0.1,
-      max_tokens: 2000,
-      azure_kwargs: {
-        api_key: "env:LLM_AZURE_OPENAI_API_KEY",
-        azure_endpoint: "env:LLM_AZURE_ENDPOINT",
-        azure_deployment: "env:LLM_AZURE_DEPLOYMENT",
-        api_version: "env:LLM_AZURE_API_VERSION",
+      model: azureLlmModel,
+      apiKey: "env:LLM_AZURE_OPENAI_API_KEY",
+      timeout: 30_000,   // 30 s per Azure API call — spread into AzureOpenAI constructor
+      maxRetries: 1,
+      modelProperties: {
+        endpoint: "env:LLM_AZURE_ENDPOINT",
+        deployment: "env:LLM_AZURE_DEPLOYMENT",
+        apiVersion: "env:LLM_AZURE_API_VERSION",
       },
     };
   } else if (llmProvider === "lmstudio") {
     llmConfig = {
       model: llmModel,
-      temperature: 0.1,
-      max_tokens: 2000,
-      api_key: "env:OPENAI_API_KEY",
-      lmstudio_base_url: openaiBaseUrl,
-      lmstudio_response_format: { type: "text" },
+      apiKey: process.env.OPENAI_API_KEY || "lm-studio",
+      baseURL: openaiBaseUrl || "http://localhost:1234/v1",
     };
   } else {
     llmConfig = {
       model: llmModel,
-      temperature: 0.1,
-      max_tokens: 2000,
-      api_key: "env:OPENAI_API_KEY",
+      apiKey: "env:OPENAI_API_KEY",
     };
-    if (openaiBaseUrl) llmConfig.openai_base_url = openaiBaseUrl;
+    if (openaiBaseUrl) llmConfig.baseURL = openaiBaseUrl;
   }
 
-  // Build embedder config
+  // Build embedder config — camelCase keys required by TypeScript SDK
   let embedderConfig: Record<string, any>;
   if (embedderProvider === "azure_openai") {
+    const azureEmbedModel = process.env.EMBEDDING_AZURE_DEPLOYMENT || embedModel;
     embedderConfig = {
-      model: embedModel,
-      embedding_dims: embeddingModelDims,
-      azure_kwargs: {
-        api_key: "env:EMBEDDING_AZURE_OPENAI_API_KEY",
-        azure_endpoint: "env:EMBEDDING_AZURE_ENDPOINT",
-        azure_deployment: "env:EMBEDDING_AZURE_DEPLOYMENT",
-        api_version: "env:EMBEDDING_AZURE_API_VERSION",
+      model: azureEmbedModel,
+      apiKey: "env:EMBEDDING_AZURE_OPENAI_API_KEY",
+      embeddingDims: embeddingModelDims,
+      modelProperties: {
+        endpoint: "env:EMBEDDING_AZURE_ENDPOINT",
+        deployment: "env:EMBEDDING_AZURE_DEPLOYMENT",
+        apiVersion: "env:EMBEDDING_AZURE_API_VERSION",
       },
     };
   } else if (embedderProvider === "lmstudio") {
     embedderConfig = {
       model: embedModel,
-      api_key: "env:OPENAI_API_KEY",
-      lmstudio_base_url: openaiBaseUrl,
-      embedding_dims: embeddingModelDims,
+      apiKey: process.env.OPENAI_API_KEY || "lm-studio",
+      url: openaiBaseUrl || "http://localhost:1234/v1",
+      embeddingDims: embeddingModelDims,
     };
   } else {
     embedderConfig = {
       model: embedModel,
-      api_key: "env:OPENAI_API_KEY",
+      apiKey: "env:OPENAI_API_KEY",
     };
-    if (openaiBaseUrl) embedderConfig.openai_base_url = openaiBaseUrl;
+    if (openaiBaseUrl) embedderConfig.url = openaiBaseUrl;
   }
 
   const config: Record<string, any> = {
-    vector_store: { provider: vectorStoreProvider, config: vectorStoreConfig },
+    vectorStore: { provider: vectorStoreProvider, config: vectorStoreConfig },
     llm: { provider: llmProvider, config: llmConfig },
     embedder: { provider: embedderProvider, config: embedderConfig },
     version: "v1.1",
   };
 
-  // Graph store detection
+  // Graph store detection — TypeScript SDK uses camelCase `graphStore`
+  // Memgraph speaks the Bolt protocol so it uses the "neo4j" provider (neo4j-driver internally)
+  //
+  // Graph LLM override: entity/relation extraction uses 3 sequential LLM tool-calls.
+  // With Azure gpt-4.1-mini each call takes ~3 s → ~10 s total for add, ~3 s for search.
+  // If GROQ_API_KEY is set we route those calls to Groq llama-3.1-8b-instant (~100-200 ms each)
+  // → ~600 ms for add background, ~200 ms for search entity extraction.
+  // Override via GRAPH_LLM_PROVIDER / GRAPH_LLM_MODEL / GRAPH_LLM_API_KEY for other providers.
+  const graphLlmProvider = process.env.GRAPH_LLM_PROVIDER ||
+    (process.env.GROQ_API_KEY ? "groq" : null);
+  const graphLlmCfg: Record<string, any> | null = graphLlmProvider ? {
+    model: process.env.GRAPH_LLM_MODEL ||
+      (graphLlmProvider === "groq" ? "llama-3.1-8b-instant" : llmConfig.model),
+    apiKey: process.env.GRAPH_LLM_API_KEY ||
+      (graphLlmProvider === "groq" ? "env:GROQ_API_KEY" : llmConfig.apiKey),
+    ...(process.env.GRAPH_LLM_BASE_URL ? { baseURL: process.env.GRAPH_LLM_BASE_URL } : {}),
+  } : null;
+  const graphLlm = graphLlmCfg
+    ? { provider: graphLlmProvider as string, config: graphLlmCfg }
+    : { provider: llmProvider, config: llmConfig };
+  if (graphLlmCfg) {
+    console.log(`Graph LLM override: provider=${graphLlmProvider} model=${graphLlmCfg.model}`);
+  }
+
   if (process.env.MEMGRAPH_URL) {
-    config.graph_store = {
-      provider: "memgraph",
+    config.graphStore = {
+      provider: "neo4j",
       config: {
         url: process.env.MEMGRAPH_URL,
         username: process.env.MEMGRAPH_USERNAME || "",
         password: process.env.MEMGRAPH_PASSWORD || "",
       },
+      // Must explicitly pass the same LLM so the default "openai" from SDK defaults
+      // doesn't get spread in by ConfigManager and override the main LLM provider.
+      llm: graphLlm,
     };
+    config.enableGraph = true;
+    console.log("Graph store: Memgraph (Bolt) at", process.env.MEMGRAPH_URL);
   } else if (process.env.NEO4J_URL) {
-    config.graph_store = {
+    config.graphStore = {
       provider: "neo4j",
       config: {
         url: process.env.NEO4J_URL,
@@ -317,7 +384,9 @@ export function getDefaultMemoryConfig(): Record<string, any> {
         password: process.env.NEO4J_PASSWORD || "",
         database: process.env.NEO4J_DATABASE,
       },
+      llm: graphLlm,
     };
+    config.enableGraph = true;
   }
 
   return config;
@@ -340,8 +409,8 @@ export function getMemoryClient(customInstructions?: string): any | null {
     if (!Memory) {
       try {
         Memory = require("mem0ai/oss").Memory;
-      } catch (e) {
-        console.error("Failed to load mem0ai/oss:", e);
+      } catch (e: any) {
+        console.error("Failed to load mem0ai/oss:", e?.message, e?.stack?.split("\n").slice(0, 3).join(" | "));
         return null;
       }
     }
@@ -364,22 +433,35 @@ export function getMemoryClient(customInstructions?: string): any | null {
         if (jsonConfig.mem0) {
           const mem0Config = jsonConfig.mem0;
 
+          // Translate snake_case DB config to camelCase TypeScript SDK format
           if (mem0Config.llm) {
-            config.llm = mem0Config.llm;
-            if (config.llm?.provider === "ollama") {
-              config.llm = fixOllamaUrls(config.llm);
+            const provider = mem0Config.llm.provider || "openai";
+            const rawCfg = mem0Config.llm.config || {};
+            const translated = translateLlmConfig(provider, rawCfg);
+            if (provider === "ollama") {
+              const fixed = fixOllamaUrls({ provider, config: { ollama_base_url: translated.baseURL } });
+              translated.baseURL = fixed.config?.ollama_base_url || translated.baseURL;
             }
+            config.llm = { provider, config: translated };
           }
 
           if (mem0Config.embedder) {
-            config.embedder = mem0Config.embedder;
-            if (config.embedder?.provider === "ollama") {
-              config.embedder = fixOllamaUrls(config.embedder);
-            }
+            const provider = mem0Config.embedder.provider || "openai";
+            const rawCfg = mem0Config.embedder.config || {};
+            const translated = translateEmbedderConfig(provider, rawCfg);
+            config.embedder = { provider, config: translated };
           }
 
-          if (mem0Config.vector_store) {
-            config.vector_store = mem0Config.vector_store;
+          // Support both old `vector_store` and new `vectorStore` keys
+          const vsRaw = mem0Config.vectorStore || mem0Config.vector_store;
+          if (vsRaw) {
+            const vsProvider = vsRaw.provider || "qdrant";
+            const vsCfg = vsRaw.config || {};
+            // Translate if it still uses snake_case keys
+            const vsTranslated = vsCfg.collectionName
+              ? vsCfg
+              : translateVectorStoreConfig(vsCfg);
+            config.vectorStore = { provider: vsProvider, config: vsTranslated };
           }
         }
       } else {
@@ -389,10 +471,10 @@ export function getMemoryClient(customInstructions?: string): any | null {
       console.warn("Warning: Error loading configuration from database:", e);
     }
 
-    // Apply custom instructions
+    // Apply custom instructions — TypeScript SDK uses `customPrompt`
     const instructions = customInstructions || dbCustomInstructions;
     if (instructions) {
-      config.custom_fact_extraction_prompt = instructions;
+      config.customPrompt = instructions;
     }
 
     // Parse env: references
@@ -408,7 +490,9 @@ export function getMemoryClient(customInstructions?: string): any | null {
         _configHash = currentHash;
         console.log("Memory client initialized successfully");
       } catch (initError) {
-        console.warn("Warning: Failed to initialize memory client:", initError);
+        console.error("ERROR: Failed to initialize memory client:", JSON.stringify(initError, null, 2));
+        console.error("ERROR initError message:", (initError as any)?.message);
+        console.error("ERROR config used:", JSON.stringify(config, null, 2));
         _memoryClient = null;
         _configHash = null;
         return null;

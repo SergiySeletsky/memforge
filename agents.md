@@ -145,7 +145,7 @@ Configure build, bundling, and Docker for the merged monolith.
 | End-to-end test: MCP SSE connection + tool calls | ✅ | SSE returns 200, sends `event: endpoint` with sessionId — MCP protocol handshake works |
 | End-to-end test: UI dashboard loads and works | ✅ | Homepage returns 200, 75KB HTML, contains "OpenMemory" |
 | Remove NEXT_PUBLIC_API_URL from .env / .env.example | ✅ | Removed — no longer needed |
-| Update README with new architecture | 🔲 | Optional — single monolith docs |
+| Update README with new architecture | ✅ | TypeScript-first quick-start, npm primary, removed v1.0.0 migration banner |
 | Docker build test (docker-compose.merged.yml) | 🔲 | Requires Docker daemon — optional |
 | Performance / load test | 🔲 | Optional |
 
@@ -153,9 +153,9 @@ Configure build, bundling, and Docker for the merged monolith.
 
 ## Current Status
 
-**ALL 9 PHASES COMPLETE + GAP AUDIT FIXES APPLIED. Migration is done — zero Python dependency.**
+**ALL PHASES COMPLETE (0–12). Migration + docs cleanup done — zero Python dependency, all docs TypeScript-only.**
 
-All code migration, build configuration, and integration testing is finished. The production build passes (26 routes + 6 pages). The dev server runs and all endpoints respond correctly. The entire OpenMemory MCP server is now a single TypeScript/Next.js application.
+All code migration, build configuration, integration testing, and documentation cleanup is finished. The production build passes (26 routes + 6 pages). The dev server runs and all endpoints respond correctly. The entire OpenMemory MCP server is now a single TypeScript/Next.js application, and all `docs/` pages have been converted to TypeScript-only examples.
 
 ### Phase 10 — Audit Gap Fixes ✅
 
@@ -172,7 +172,29 @@ All code migration, build configuration, and integration testing is finished. Th
 | Generic MCP messages route: `POST /api/mcp/messages` | ✅ | `app/api/mcp/messages/route.ts` |
 | Production build verification (26 routes + 6 pages) | ✅ | — |
 
-Remaining optional tasks: Docker build test (requires Docker daemon), README update, performance testing.
+---
+
+**ALL PHASES COMPLETE. Migration + docs cleanup is done — zero Python dependency, all docs TypeScript-only.**
+
+### Phase 12 — Docs TypeScript Cleanup ✅
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Delete Python-only docs (v0x/, migration/, 6 feature pages) | ✅ | v0x dir, python-quickstart, async-memory, rest-api, multimodal (Python-only), etc. |
+| Delete Python-only component docs (16 vector stores, 4 LLMs, 4 embedders, 4 rerankers) | ✅ | Only TypeScript-supported providers remain |
+| Delete Python-only integrations (11) and cookbooks (9) | ✅ | |
+| Clean docs.json navigation | ✅ | Single `v1.0.1` version, all Python-only pages removed |
+| Rewrite overview.mdx + configuration.mdx | ✅ | TypeScript-first |
+| Strip Python from 20 component provider docs (LLM/embedder/reranker/vectordb) | ✅ | CodeGroup wrappers removed, TypeScript only |
+| Convert 5 integration docs (keywords, langchain, langchain-tools, openai-agents-sdk, livekit) | ✅ | |
+| Convert reranker-search.mdx, custom-update-memory-prompt.mdx, multimodal-support.mdx | ✅ | openai_compatibility.mdx deleted (Python proxy, no TS equiv) |
+| Convert 8 cookbook docs (agents-sdk-tool, support-inbox, local-companion-ollama, team-task-agent, email-automation, tavily-search, building-ai-companion, choosing-memory-architecture) | ✅ | |
+| Convert 5 cookbook essentials (controlling-memory-ingestion, entity-partitioning, exporting-memories, memory-expiration, tagging-and-organizing) | ✅ | |
+| Convert integrations/elevenlabs.mdx | ✅ | pip → npm, Python async functions → TypeScript |
+| Convert api-reference docs (organizations-projects, get-memories, search-memories) | ✅ | |
+| Update README.md + LLM.md | ✅ | TypeScript-first, removed v1.0.0 migration banner, npm primary |
+
+---
 
 ### Phase 11 — Python API Cleanup ✅
 

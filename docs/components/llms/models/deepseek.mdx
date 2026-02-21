@@ -1,53 +1,50 @@
----
+﻿---
 title: DeepSeek
 ---
 
-To use DeepSeek LLM models, you have to set the `DEEPSEEK_API_KEY` environment variable. You can also optionally set `DEEPSEEK_API_BASE` if you need to use a different API endpoint (defaults to "https://api.deepseek.com").
+To use DeepSeek LLM models, set the `DEEPSEEK_API_KEY` environment variable. You can also optionally set `DEEPSEEK_API_BASE` if you need a different API endpoint (defaults to `https://api.deepseek.com`).
 
 ## Usage
 
-```python
-import os
-from mem0 import Memory
+```ts
+import { Memory } from "mem0ai/oss";
 
-os.environ["DEEPSEEK_API_KEY"] = "your-api-key"
-os.environ["OPENAI_API_KEY"] = "your-api-key" # for embedder model
+const memory = new Memory({
+  llm: {
+    provider: "deepseek",
+    config: {
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      model: "deepseek-chat",
+      temperature: 0.2,
+      maxTokens: 2000,
+      topP: 1.0,
+    },
+  },
+});
 
-config = {
-    "llm": {
-        "provider": "deepseek",
-        "config": {
-            "model": "deepseek-chat",  # default model
-            "temperature": 0.2,
-            "max_tokens": 2000,
-            "top_p": 1.0
-        }
-    }
-}
+const messages = [
+  { role: "user", content: "I'm planning to watch a movie tonight. Any recommendations?" },
+  { role: "assistant", content: "How about thriller movies? They can be quite engaging." },
+  { role: "user", content: "I'm not a big fan of thriller movies but I love sci-fi movies." },
+  { role: "assistant", content: "Got it! I'll avoid thriller recommendations and suggest sci-fi movies in the future." },
+];
 
-m = Memory.from_config(config)
-messages = [
-    {"role": "user", "content": "I'm planning to watch a movie tonight. Any recommendations?"},
-    {"role": "assistant", "content": "How about thriller movies? They can be quite engaging."},
-    {"role": "user", "content": "I’m not a big fan of thriller movies but I love sci-fi movies."},
-    {"role": "assistant", "content": "Got it! I'll avoid thriller recommendations and suggest sci-fi movies in the future."}
-]
-m.add(messages, user_id="alice", metadata={"category": "movies"})
+await memory.add(messages, { userId: "alice", metadata: { category: "movies" } });
 ```
 
-You can also configure the API base URL in the config:
+You can also configure a custom API base URL:
 
-```python
-config = {
-    "llm": {
-        "provider": "deepseek",
-        "config": {
-            "model": "deepseek-chat",
-            "deepseek_base_url": "https://your-custom-endpoint.com",
-            "api_key": "your-api-key"  # alternatively to using environment variable
-        }
-    }
-}
+```ts
+const memory = new Memory({
+  llm: {
+    provider: "deepseek",
+    config: {
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      model: "deepseek-chat",
+      deepseekBaseUrl: "https://your-custom-endpoint.com",
+    },
+  },
+});
 ```
 
 ## Config

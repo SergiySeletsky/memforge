@@ -23,6 +23,13 @@ services:
       - DATABASE_PATH=/app/data/openmemory.db
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - QDRANT_URL=http://mem0_store:6333
+      # Optional: fast LLM for graph entity extraction (Groq ~100-200ms vs Azure ~3s)
+      # Get a free key at https://console.groq.com
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      # Override graph LLM provider/model manually if needed:
+      # - GRAPH_LLM_PROVIDER=groq
+      # - GRAPH_LLM_MODEL=llama-3.1-8b-instant
+      # - GRAPH_LLM_API_KEY=gsk_...
     depends_on:
       - mem0_store
     volumes:

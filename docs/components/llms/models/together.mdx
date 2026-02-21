@@ -1,37 +1,34 @@
----
+﻿---
 title: Together
 ---
 
-To use Together LLM models, you have to set the `TOGETHER_API_KEY` environment variable. You can obtain the Together API key from their [Account settings page](https://api.together.xyz/settings/api-keys).
+To use Together AI LLM models, set the `TOGETHER_API_KEY` environment variable. Get your API key from the [Together AI account settings](https://api.together.xyz/settings/api-keys).
 
 ## Usage
 
-```python
-import os
-from mem0 import Memory
+```ts
+import { Memory } from "mem0ai/oss";
 
-os.environ["OPENAI_API_KEY"] = "your-api-key" # used for embedding model
-os.environ["TOGETHER_API_KEY"] = "your-api-key"
+const memory = new Memory({
+  llm: {
+    provider: "together",
+    config: {
+      apiKey: process.env.TOGETHER_API_KEY,
+      model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
+      temperature: 0.2,
+      maxTokens: 2000,
+    },
+  },
+});
 
-config = {
-    "llm": {
-        "provider": "together",
-        "config": {
-            "model": "mistralai/Mixtral-8x7B-Instruct-v0.1",
-            "temperature": 0.2,
-            "max_tokens": 2000,
-        }
-    }
-}
+const messages = [
+  { role: "user", content: "I'm planning to watch a movie tonight. Any recommendations?" },
+  { role: "assistant", content: "How about thriller movies? They can be quite engaging." },
+  { role: "user", content: "I'm not a big fan of thriller movies but I love sci-fi movies." },
+  { role: "assistant", content: "Got it! I'll avoid thriller recommendations and suggest sci-fi movies in the future." },
+];
 
-m = Memory.from_config(config)
-messages = [
-    {"role": "user", "content": "I'm planning to watch a movie tonight. Any recommendations?"},
-    {"role": "assistant", "content": "How about thriller movies? They can be quite engaging."},
-    {"role": "user", "content": "I’m not a big fan of thriller movies but I love sci-fi movies."},
-    {"role": "assistant", "content": "Got it! I'll avoid thriller recommendations and suggest sci-fi movies in the future."}
-]
-m.add(messages, user_id="alice", metadata={"category": "movies"})
+await memory.add(messages, { userId: "alice", metadata: { category: "movies" } });
 ```
 
 ## Config

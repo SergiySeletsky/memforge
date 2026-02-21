@@ -41,31 +41,6 @@ Custom fact extraction prompts let you decide exactly which facts Mem0 records f
 
 ### Write the custom prompt
 
-<CodeGroup>
-```python Python
-custom_fact_extraction_prompt = """
-Please only extract entities containing customer support information, order details, and user information. 
-Here are some few shot examples:
-
-Input: Hi.
-Output: {"facts" : []}
-
-Input: The weather is nice today.
-Output: {"facts" : []}
-
-Input: My order #12345 hasn't arrived yet.
-Output: {"facts" : ["Order #12345 not received"]}
-
-Input: I'm John Doe, and I'd like to return the shoes I bought last week.
-Output: {"facts" : ["Customer name: John Doe", "Wants to return shoes", "Purchase made last week"]}
-
-Input: I ordered a red shirt, size medium, but received a blue one instead.
-Output: {"facts" : ["Ordered red shirt, size medium", "Received blue shirt instead"]}
-
-Return the facts and customer information in a json format as shown above.
-"""
-```
-
 ```ts TypeScript
 const customPrompt = `
 Please only extract entities containing customer support information, order details, and user information. 
@@ -89,33 +64,12 @@ Output: {"facts" : ["Ordered red shirt, size medium", "Received blue shirt inste
 Return the facts and customer information in a json format as shown above.
 `;
 ```
-</CodeGroup>
 
 <Tip>
   Keep example pairs short and mirror the capitalization, punctuation, and tone you see in real user messages.
 </Tip>
 
 ### Load the prompt in configuration
-
-<CodeGroup>
-```python Python
-from mem0 import Memory
-
-config = {
-    "llm": {
-        "provider": "openai",
-        "config": {
-            "model": "gpt-4.1-nano-2025-04-14",
-            "temperature": 0.2,
-            "max_tokens": 2000,
-        }
-    },
-    "custom_fact_extraction_prompt": custom_fact_extraction_prompt,
-    "version": "v1.1"
-}
-
-m = Memory.from_config(config_dict=config)
-```
 
 ```ts TypeScript
 import { Memory } from "mem0ai/oss";
@@ -136,7 +90,6 @@ const config = {
 
 const memory = new Memory(config);
 ```
-</CodeGroup>
 
 <Info icon="check">
   After initialization, run a quick `add` call with a known example and confirm the response splits into separate facts.
@@ -147,11 +100,6 @@ const memory = new Memory(config);
 ## See it in action
 
 ### Example: Order support memory
-
-<CodeGroup>
-```python Python
-m.add("Yesterday, I ordered a laptop, the order id is 12345", user_id="alice")
-```
 
 ```ts TypeScript
 await memory.add("Yesterday, I ordered a laptop, the order id is 12345", { userId: "user123" });
@@ -167,18 +115,12 @@ await memory.add("Yesterday, I ordered a laptop, the order id is 12345", { userI
   "relations": []
 }
 ```
-</CodeGroup>
 
 <Info icon="check">
   The output contains only the facts described in your prompt, each stored as a separate memory entry.
 </Info>
 
 ### Example: Irrelevant message filtered out
-
-<CodeGroup>
-```python Python
-m.add("I like going to hikes", user_id="alice")
-```
 
 ```ts TypeScript
 await memory.add("I like going to hikes", { userId: "user123" });
@@ -190,7 +132,6 @@ await memory.add("I like going to hikes", { userId: "user123" });
   "relations": []
 }
 ```
-</CodeGroup>
 
 <Tip>
   Empty `results` show the prompt successfully ignored content outside your target domain.

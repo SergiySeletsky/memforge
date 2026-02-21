@@ -12,10 +12,10 @@ Mem0 handles this for you by providing the flexibility to organize memories with
 
 ## Setup
 
-```python
-from mem0 import MemoryClient
+```typescript
+import MemoryClient from 'mem0ai';
 
-client = MemoryClient(api_key="your-api-key")
+const client = new MemoryClient({ apiKey: 'your-api-key' });
 ```
 
 <Note>
@@ -30,30 +30,30 @@ Without categories, all memories sit in one undifferentiated bucket. Support age
 
 Let's see what happens without organization:
 
-```python
-# Joseph (support agent) stores various customer interactions
-client.add(
-    "Maria called about her account password reset",
-    user_id="maria",
-)
+```typescript
+// Joseph (support agent) stores various customer interactions
+await client.add(
+  'Maria called about her account password reset',
+  { userId: 'maria' }
+);
 
-client.add(
-    "Maria was charged twice for last month's subscription",
-    user_id="maria",
-)
+await client.add(
+  "Maria was charged twice for last month's subscription",
+  { userId: 'maria' }
+);
 
-client.add(
-    "Maria wants to upgrade to the premium plan",
-    user_id="maria",
-)
+await client.add(
+  'Maria wants to upgrade to the premium plan',
+  { userId: 'maria' }
+);
 
-# Now try to find just billing issues
-all_memories = client.get_all(filters={"user_id": "maria"})
-print(f"Total memories: {len(all_memories['results'])}")
+// Now try to find just billing issues
+const allMemories = await client.getAll({ filters: { userId: 'maria' } });
+console.log(`Total memories: ${allMemories['results'].length}`);
 
-for memory in all_memories['results']:
-    print(f"- {memory['memory']}")
-
+for (const memory of allMemories['results']) {
+  console.log(`- ${memory['memory']}`);
+}
 ```
 
 **Output:**
@@ -78,16 +78,16 @@ Everything is mixed together. Support agents have to read through all memories t
 
 Define categories that match how your support team thinks about customer issues:
 
-```python
-custom_categories = [
-    {"support_tickets": "Customer issues and resolutions"},
-    {"account_info": "Account details and preferences"},
-    {"billing": "Payment history and billing questions"},
-    {"product_feedback": "Feature requests and feedback"},
-]
+```typescript
+const customCategories = [
+  { support_tickets: 'Customer issues and resolutions' },
+  { account_info: 'Account details and preferences' },
+  { billing: 'Payment history and billing questions' },
+  { product_feedback: 'Feature requests and feedback' },
+];
 
-client.project.update(custom_categories=custom_categories)
-
+// Configure via Mem0 dashboard: app.mem0.ai/settings
+// await (client as any).project?.update({ customCategories });
 ```
 
 <Tip>
@@ -102,28 +102,24 @@ These categories are now available project-wide. Every memory can be tagged with
 
 Once categories are defined at the project level, Mem0 automatically assigns them based on content:
 
-```python
-# Billing issue - automatically tagged as "billing"
-client.add(
-    "Maria was charged twice for last month's subscription",
-    user_id="maria",
-    metadata={"priority": "high", "source": "phone_call"}
-)
+```typescript
+// Billing issue - automatically tagged as "billing"
+await client.add(
+  "Maria was charged twice for last month's subscription",
+  { userId: 'maria', metadata: { priority: 'high', source: 'phone_call' } }
+);
 
-# Account update - automatically tagged as "account_info"
-client.add(
-    "Maria changed her email to maria.new@example.com",
-    user_id="maria",
-    metadata={"source": "web_portal"}
-)
+// Account update - automatically tagged as "account_info"
+await client.add(
+  'Maria changed her email to maria.new@example.com',
+  { userId: 'maria', metadata: { source: 'web_portal' } }
+);
 
-# Product feedback - automatically tagged as "product_feedback"
-client.add(
-    "Maria requested a dark mode feature for the dashboard",
-    user_id="maria",
-    metadata={"source": "chat"}
-)
-
+// Product feedback - automatically tagged as "product_feedback"
+await client.add(
+  'Maria requested a dark mode feature for the dashboard',
+  { userId: 'maria', metadata: { source: 'chat' } }
+);
 ```
 
 Mem0 reads the content and intelligently assigns the appropriate categories. You don't manually tag - the platform does it for you based on the category definitions.
@@ -134,21 +130,21 @@ Mem0 reads the content and intelligently assigns the appropriate categories. You
 
 Filter memories by category to find exactly what you need:
 
-```python
-# Joseph needs to pull all billing issues for audit
-billing_issues = client.get_all(
-    filters={
-        "AND": [
-            {"user_id": "maria"},
-            {"categories": {"in": ["billing"]}}
-        ]
-    }
-)
+```typescript
+// Joseph needs to pull all billing issues for audit
+const billingIssues = await client.getAll({
+  filters: {
+    AND: [
+      { userId: 'maria' },
+      { categories: { in: ['billing'] } }
+    ]
+  }
+});
 
-print("Billing issues:")
-for memory in billing_issues['results']:
-    print(f"- {memory['memory']}")
-
+console.log('Billing issues:');
+for (const memory of billingIssues['results']) {
+  console.log(`- ${memory['memory']}`);
+}
 ```
 
 **Output:**
@@ -167,20 +163,20 @@ Only billing-related memories are returned. No need to filter through account up
 
 You can also retrieve multiple categories:
 
-```python
-# Get both account info and billing
-account_and_billing = client.get_all(
-    filters={
-        "AND": [
-            {"user_id": "maria"},
-            {"categories": {"in": ["account_info", "billing"]}}
-        ]
-    }
-)
+```typescript
+// Get both account info and billing
+const accountAndBilling = await client.getAll({
+  filters: {
+    AND: [
+      { userId: 'maria' },
+      { categories: { in: ['account_info', 'billing'] } }
+    ]
+  }
+});
 
-for memory in account_and_billing['results']:
-    print(f"[{memory['categories'][0]}] {memory['memory']}")
-
+for (const memory of accountAndBilling['results']) {
+  console.log(`[${memory['categories'][0]}] ${memory['memory']}`);
+}
 ```
 
 **Output:**
@@ -197,24 +193,24 @@ for memory in account_and_billing['results']:
 
 Categories are automatically assigned based on content. To trigger re-categorization, update the memory content:
 
-```python
-# Find memories that need re-categorization
-needs_update = client.get_all(
-    filters={
-        "AND": [
-            {"user_id": "maria"},
-            {"categories": {"in": ["misc"]}}
-        ]
-    }
-)
+```typescript
+// Find memories that need re-categorization
+const needsUpdate = await client.getAll({
+  filters: {
+    AND: [
+      { userId: 'maria' },
+      { categories: { in: ['misc'] } }
+    ]
+  }
+});
 
-# Update memory content to trigger re-categorization
-for memory in needs_update['results']:
-    client.update(
-        memory_id=memory['id'],
-        data=memory['memory']  # Re-process with current category definitions
-    )
-
+// Update memory content to trigger re-categorization
+for (const memory of needsUpdate['results']) {
+  await client.update(
+    memory['id'],
+    memory['memory']  // Re-process with current category definitions
+  );
+}
 ```
 
 When you update a memory, Mem0 re-analyzes it against your current category definitions. This is useful when you introduce new categories or refine category descriptions.

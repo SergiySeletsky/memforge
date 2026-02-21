@@ -16,130 +16,113 @@ Integrating Mem0 into your writing workflow helps you:
 
 ## Setup
 
-```python
-import os
-from openai import OpenAI
-from mem0 import MemoryClient
+```bash
+npm install mem0ai openai
+```
 
-os.environ["MEM0_API_KEY"] = "your-mem0-api-key"
-os.environ["OPENAI_API_KEY"] = "your-openai-api-key"
+```typescript
+import MemoryClient from 'mem0ai';
+import OpenAI from 'openai';
 
+const client = new MemoryClient({ apiKey: process.env.MEM0_API_KEY! });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-# Set up Mem0 and OpenAI client
-client = MemoryClient()
-openai = OpenAI()
-
-USER_ID = "content_writer"
-RUN_ID = "smart_editing_session"
+const USER_ID = 'content_writer';
+const RUN_ID = 'smart_editing_session';
 ```
 
 ## Storing Your Writing Preferences in Mem0
 
-```python
-def store_writing_preferences():
-    """Store your writing preferences in Mem0."""
-    
-    preferences = """My writing preferences:
+```typescript
+async function storeWritingPreferences(): Promise<void> {
+  const preferences = `My writing preferences:
 1. Use headings and sub-headings for structure.
 2. Keep paragraphs concise (8–10 sentences max).
 3. Incorporate specific numbers and statistics.
 4. Provide concrete examples.
 5. Use bullet points for clarity.
-6. Avoid jargon and buzzwords."""
+6. Avoid jargon and buzzwords.`;
 
-    messages = [
-        {"role": "user", "content": "Here are my writing style preferences."},
-        {"role": "assistant", "content": preferences}
-    ]
+  const messages = [
+    { role: 'user', content: 'Here are my writing style preferences.' },
+    { role: 'assistant', content: preferences },
+  ];
 
-    response = client.add(
-        messages,
-        user_id=USER_ID,
-        run_id=RUN_ID,
-        metadata={"type": "preferences", "category": "writing_style"}
-    )
-
-    return response
+  await client.add(messages, {
+    user_id: USER_ID,
+    run_id: RUN_ID,
+    metadata: { type: 'preferences', category: 'writing_style' },
+  });
+}
 ```
 
 ## Editing Content Using Stored Preferences
 
-```python
-def apply_writing_style(original_content):
-    """Use preferences stored in Mem0 to guide content rewriting."""
+```typescript
+async function applyWritingStyle(originalContent: string): Promise<string | null> {
+  const results = await client.search(
+    'What are my writing style preferences?',
+    {
+      filters: {
+        AND: [
+          { user_id: USER_ID },
+          { run_id: RUN_ID },
+        ],
+      },
+    }
+  );
 
-    results = client.search(
-        query="What are my writing style preferences?",
-        filters={
-            "AND": [
-                {"user_id": USER_ID},
-                {"run_id": RUN_ID}
-            ]
-        }
-    )
+  if (!results || results.results.length === 0) {
+    console.log('No preferences found.');
+    return null;
+  }
 
-    if not results:
-        print("No preferences found.")
-        return None
+  const preferences = results.results.map((r: any) => r.memory).join('\n');
 
-    preferences = "\n".join(r["memory"] for r in results.get('results', []))
-
-    system_prompt = f"""
-You are a writing assistant.
+  const systemPrompt = `You are a writing assistant.
 
 Apply the following writing style preferences to improve the user's content:
 
 Preferences:
-{preferences}
-"""
+${preferences}`;
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"""Original Content:
-    {original_content}"""}
-    ]
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4.1-nano-2025-04-14',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Original Content:\n${originalContent}` },
+    ],
+  });
 
-    response = openai.chat.completions.create(
-        model="gpt-4.1-nano-2025-04-14",
-        messages=messages
-    )
-    clean_response = response.choices[0].message.content.strip()
-
-    return clean_response
+  return response.choices[0].message.content?.trim() ?? null;
+}
 ```
 
 ## Complete Workflow: Content Editing
 
-```python
-def content_writing_workflow(content):
-    """Automated workflow for editing a document based on writing preferences."""
-    
-    # Store writing preferences (if not already stored)
-    store_writing_preferences()  # Ideally done once, or with a conditional check
-    
-    # Edit the document with Mem0 preferences
-    edited_content = apply_writing_style(content)
-    
-    if not edited_content:
-        return "Failed to edit document."
-    
-    # Display results
-    print("\n=== ORIGINAL DOCUMENT ===\n")
-    print(content)
-    
-    print("\n=== EDITED DOCUMENT ===\n")
-    print(edited_content)
-    
-    return edited_content
+```typescript
+async function contentWritingWorkflow(content: string): Promise<string> {
+  // Store writing preferences (ideally done once)
+  await storeWritingPreferences();
+
+  const editedContent = await applyWritingStyle(content);
+  if (!editedContent) return 'Failed to edit document.';
+
+  console.log('\n=== ORIGINAL DOCUMENT ===\n');
+  console.log(content);
+  console.log('\n=== EDITED DOCUMENT ===\n');
+  console.log(editedContent);
+
+  return editedContent;
+}
 ```
 
 ## Example Usage
 
-```python
-# Define your document
-original_content = """Project Proposal
-    
-The following proposal outlines our strategy for the Q3 marketing campaign. 
+```typescript
+const originalContent = `Project Proposal
+
+The following proposal outlines our strategy for the Q3 marketing campaign.
 We believe this approach will significantly increase our market share.
 
 Increase brand awareness
@@ -147,10 +130,9 @@ Boost sales by 15%
 Expand our social media following
 
 We plan to launch the campaign in July and continue through September.
-"""
+`;
 
-# Run the workflow
-result = content_writing_workflow(original_content)
+const result = await contentWritingWorkflow(originalContent);
 ```
 
 ## Expected Output

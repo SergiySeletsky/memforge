@@ -31,10 +31,10 @@ In this tutorial, we will:
 
 ## Setup
 
-```python
-from mem0 import MemoryClient
+```typescript
+import MemoryClient from 'mem0ai';
 
-client = MemoryClient(api_key="your-api-key")
+const client = new MemoryClient({ apiKey: 'your-api-key' });
 ```
 
 <Note>
@@ -47,15 +47,14 @@ Replace `your-api-key` with your actual Mem0 API key from the [dashboard](https:
 
 Uncontrolled ingestion stores everything, including speculation:
 
-```python
-# Patient mentions speculation
-messages = [{"role": "user", "content": "I think I might be allergic to penicillin"}]
-client.add(messages, user_id="patient_123")
+```typescript
+// Patient mentions speculation
+const messages = [{ role: 'user', content: 'I think I might be allergic to penicillin' }];
+await client.add(messages, { userId: 'patient_123' });
 
-# Check what got stored
-results = client.search("patient allergies", filters={"user_id": "patient_123"})
-print(results['results'][0]['memory'])
-
+// Check what got stored
+const results = await client.search('patient allergies', { filters: { AND: [{ userId: 'patient_123' }] } });
+console.log(results['results'][0]['memory']);
 ```
 
 **Output:**
@@ -76,8 +75,8 @@ The speculation became a confirmed fact. Let's add controls.
 
 Custom instructions tell Mem0 what to store and what to ignore.
 
-```python
-instructions = """
+```typescript
+const instructions = `
 Only store CONFIRMED medical facts.
 
 Store:
@@ -89,17 +88,18 @@ Ignore:
 - Speculation (words like "might", "maybe", "I think")
 - Unverified symptoms
 - Casual mentions without confirmation
-"""
+\`;
 
-client.project.update(custom_instructions=instructions)
+// Configure via Mem0 dashboard: app.mem0.ai/settings
+// await (client as any).project?.update({ customInstructions: instructions });
 
-# Same speculative statement
-messages = [{"role": "user", "content": "I think I might be allergic to penicillin"}]
-client.add(messages, user_id="patient_123")
+// Same speculative statement
+const messages = [{ role: 'user', content: 'I think I might be allergic to penicillin' }];
+await client.add(messages, { userId: 'patient_123' });
 
-# Check what got stored
-results = client.get_all(filters={"user_id": "patient_123"})
-print(f"Memories stored: {len(results['results'])}")
+// Check what got stored
+const results = await client.getAll({ filters: { AND: [{ userId: 'patient_123' }] } });
+console.log(`Memories stored: ${results['results'].length}`);
 
 ```
 
@@ -123,30 +123,28 @@ When designing instructions, consider the trade-off between precision and recall
 
 **Too restrictive:** You'll miss important information (false negatives)
 
-```python
-# Too strict - filters out useful context
-"""
+```typescript
+// Too strict - filters out useful context
+/*
 Only store information if explicitly stated by a doctor with full name,
 date, time, and medical license number.
-"""
-
+*/
 ```
 
 **Too permissive:** You'll store unreliable data (false positives)
 
-```python
-# Too loose - stores speculation as fact
-"""
+```typescript
+// Too loose - stores speculation as fact
+/*
 Store any health-related information mentioned.
-"""
-
+*/
 ```
 
 **Balanced approach:**
 
-```python
-# Clear categories with examples
-"""
+```typescript
+// Clear categories with examples
+/*
 Store CONFIRMED facts:
 - Diagnoses: "Dr. Smith diagnosed hypertension on March 15th"
 - Allergies: "Patient had hives reaction to penicillin"
@@ -156,8 +154,7 @@ Ignore SPECULATION:
 - "I think I might have..."
 - "Maybe it's..."
 - "Could be related to..."
-"""
-
+*/
 ```
 
 <Tip>
@@ -182,27 +179,27 @@ Setting the right confidence threshold depends on your application:
 
 Test your pipeline with multiple input examples and threshold combinations to find what works for your use case.
 
-```python
-# Configure stricter instructions
-client.project.update(
-    custom_instructions="""
-Only extract memories with HIGH confidence.
-Require specific details (dates, dosages, doctor names) for medical facts.
-Skip vague or uncertain statements.
-"""
-)
+```typescript
+// Configure stricter instructions
+// Configure via Mem0 dashboard: app.mem0.ai/settings
+// await (client as any).project?.update({
+//   customInstructions: `
+// Only extract memories with HIGH confidence.
+// Require specific details (dates, dosages, doctor names) for medical facts.
+// Skip vague or uncertain statements.
+// `
+// });
 
-# Test with uncertain statement
-messages = [{"role": "user", "content": "The doctor mentioned something about my blood pressure"}]
-result1 = client.add(messages, user_id="patient_123")
+// Test with uncertain statement
+let messages = [{ role: 'user', content: 'The doctor mentioned something about my blood pressure' }];
+const result1 = await client.add(messages, { userId: 'patient_123' });
 
-# Test with confirmed fact
-messages = [{"role": "user", "content": "Dr. Smith diagnosed me with hypertension on March 15th"}]
-result2 = client.add(messages, user_id="patient_123")
+// Test with confirmed fact
+messages = [{ role: 'user', content: 'Dr. Smith diagnosed me with hypertension on March 15th' }];
+const result2 = await client.add(messages, { userId: 'patient_123' });
 
-print("Vague statement stored:", len(result1['results']) > 0)
-print("Confirmed fact stored:", len(result2['results']) > 0)
-
+console.log('Vague statement stored:', result1['results'].length > 0);
+console.log('Confirmed fact stored:', result2['results'].length > 0);
 ```
 
 **Output:**
@@ -224,38 +221,39 @@ The vague statement was filtered for low confidence. The confirmed fact with spe
 
 Custom instructions can prevent storing personal identifiers:
 
-```python
-client.project.update(
-    custom_instructions="""
-Medical memory rules:
+```typescript
+// Configure via Mem0 dashboard: app.mem0.ai/settings
+// await (client as any).project?.update({
+//   customInstructions: `
+// Medical memory rules:
+//
+// STORE:
+// - Confirmed diagnoses
+// - Verified allergies
+// - Current medications
+//
+// NEVER STORE:
+// - Social Security Numbers
+// - Insurance policy numbers
+// - Credit card information
+// - Full addresses
+// - Phone numbers
+//
+// Replace identifiers with generic references if mentioned.
+// `
+// });
 
-STORE:
-- Confirmed diagnoses
-- Verified allergies
-- Current medications
+// Test with PII
+const messages = [
+  { role: 'user', content: "My SSN is 123-45-6789 and I'm allergic to penicillin" }
+];
+await client.add(messages, { userId: 'patient_123' });
 
-NEVER STORE:
-- Social Security Numbers
-- Insurance policy numbers
-- Credit card information
-- Full addresses
-- Phone numbers
-
-Replace identifiers with generic references if mentioned.
-"""
-)
-
-# Test with PII
-messages = [
-    {"role": "user", "content": "My SSN is 123-45-6789 and I'm allergic to penicillin"}
-]
-client.add(messages, user_id="patient_123")
-
-# Check what was stored
-results = client.get_all(filters={"user_id": "patient_123"})
-for result in results['results']:
-    print(result['memory'])
-
+// Check what was stored
+const results = await client.getAll({ filters: { AND: [{ userId: 'patient_123' }] } });
+for (const result of results['results']) {
+  console.log(result['memory']);
+}
 ```
 
 **Output:**
@@ -272,28 +270,27 @@ The SSN was filtered out, but the allergy was stored.
 
 When information changes, update existing memories instead of creating duplicates.
 
-```python
-# Initial allergy stored
-result = client.add(
-    [{"role": "user", "content": "Patient confirmed allergy to penicillin with documented hives reaction"}],
-    user_id="patient_123"
-)
+```typescript
+// Initial allergy stored
+const result = await client.add(
+  [{ role: 'user', content: 'Patient confirmed allergy to penicillin with documented hives reaction' }],
+  { userId: 'patient_123' }
+);
 
-memory_id = result['results'][0]['id']
-print(f"Stored memory: {memory_id}")
+const memoryId = result['results'][0]['id'];
+console.log(`Stored memory: ${memoryId}`);
 
-# Later, patient gets retested - allergy was false positive
-client.update(
-    memory_id=memory_id,
-    text="Patient tested negative for penicillin allergy on April 2nd, 2025. Previous allergy was false positive.",
-    metadata={"verified": True, "updated_date": "2025-04-02"}
-)
+// Later, patient gets retested - allergy was false positive
+await client.update(
+  memoryId,
+  'Patient tested negative for penicillin allergy on April 2nd, 2025. Previous allergy was false positive.',
+  { metadata: { verified: true, updatedDate: '2025-04-02' } }
+);
 
-# Retrieve the updated memory
-updated = client.get(memory_id)
-print(f"\\nUpdated memory: {updated['memory']}")
-print(f"Metadata: {updated['metadata']}")
-
+// Retrieve the updated memory
+const updated = await client.get(memoryId);
+console.log(`\nUpdated memory: ${updated['memory']}`);
+console.log(`Metadata: ${JSON.stringify(updated['metadata'])}`);
 ```
 
 **Output:**
@@ -350,13 +347,12 @@ When should you update vs delete?
 - You need audit history
 - The memory has relationships to other data
 
-```python
-# Medication dosage changed
-client.update(
-    memory_id=med_id,
-    text="Taking Lisinopril 20mg daily (increased from 10mg on March 1st)"
-)
-
+```typescript
+// Medication dosage changed
+await client.update(
+  medId,
+  'Taking Lisinopril 20mg daily (increased from 10mg on March 1st)'
+);
 ```
 
 ### Delete when:
@@ -365,10 +361,9 @@ client.update(
 - Memory is no longer relevant
 - Duplicate entry
 
-```python
-# Duplicate entry
-client.delete(memory_id)
-
+```typescript
+// Duplicate entry
+await client.delete(memoryId);
 ```
 
 ---
@@ -377,66 +372,65 @@ client.delete(memory_id)
 
 Here's a complete ingestion pipeline with all controls:
 
-```python
-from mem0 import MemoryClient
-import os
+```typescript
+import MemoryClient from 'mem0ai';
 
-# Initialize client
-client = MemoryClient(api_key=os.getenv("MEM0_API_KEY"))
+// Initialize client
+const client = new MemoryClient({ apiKey: process.env.MEM0_API_KEY! });
 
-# Configure custom instructions
-client.project.update(
-    custom_instructions="""
-Medical memory assistant rules:
+// Configure custom instructions via Mem0 dashboard: app.mem0.ai/settings
+// await (client as any).project?.update({
+//   customInstructions: `
+// Medical memory assistant rules:
+//
+// STORE:
+// - Confirmed diagnoses (with doctor name and date)
+// - Verified allergies (with reaction details)
+// - Current medications (with dosage)
+//
+// IGNORE:
+// - Speculation (might, maybe, possibly)
+// - Unverified symptoms
+// - Personal identifiers (SSN, insurance numbers)
+//
+// CONFIDENCE:
+// Require high confidence. Reject vague or uncertain statements.
+// Require specific details: names, dates, dosages.
+// `
+// });
 
-STORE:
-- Confirmed diagnoses (with doctor name and date)
-- Verified allergies (with reaction details)
-- Current medications (with dosage)
+// Helper function for safe ingestion
+async function addMedicalMemory(content: string, userId: string, metadata: Record<string, any> = {}) {
+  const result = await client.add(
+    [{ role: 'user', content }],
+    { userId, metadata }
+  );
 
-IGNORE:
-- Speculation (might, maybe, possibly)
-- Unverified symptoms
-- Personal identifiers (SSN, insurance numbers)
+  if (result['results'].length > 0) {
+    console.log(`✓ Stored: ${result['results'][0]['memory']}`);
+  } else {
+    console.log(`✗ Filtered: ${content}`);
+  }
 
-CONFIDENCE:
-Require high confidence. Reject vague or uncertain statements.
-Require specific details: names, dates, dosages.
-"""
-)
+  return result;
+}
 
-# Helper function for safe ingestion
-def add_medical_memory(content, user_id, metadata=None):
-    """Add memory with automatic filtering."""
-    result = client.add(
-        [{"role": "user", "content": content}],
-        user_id=user_id,
-        metadata=metadata or {}
-    )
+// Test cases
+console.log('Testing ingestion pipeline:\n');
 
-    if result['results']:
-        print(f"✓ Stored: {result['results'][0]['memory']}")
-    else:
-        print(f"✗ Filtered: {content}")
+const testCases = [
+  'I think I might be allergic to penicillin',
+  'Dr. Johnson confirmed penicillin allergy on Jan 15th with hives reaction',
+  'Patient SSN is 123-45-6789',
+  'Currently taking Lisinopril 10mg daily for hypertension',
+  'Feeling tired lately',
+  'Dr. Martinez diagnosed Type 2 diabetes on February 3rd, 2025'
+];
 
-    return result
-
-# Test cases
-print("Testing ingestion pipeline:\\n")
-
-test_cases = [
-    "I think I might be allergic to penicillin",
-    "Dr. Johnson confirmed penicillin allergy on Jan 15th with hives reaction",
-    "Patient SSN is 123-45-6789",
-    "Currently taking Lisinopril 10mg daily for hypertension",
-    "Feeling tired lately",
-    "Dr. Martinez diagnosed Type 2 diabetes on February 3rd, 2025"
-]
-
-for content in test_cases:
-    add_medical_memory(content, user_id="patient_123")
-    print()
-
+for (const content of testCases) {
+  await addMedicalMemory(content, 'patient_123');
+  console.log();
+}
 ```
 
 **Output:**
@@ -466,25 +460,25 @@ You can override project-level instructions for specific conversations:
 
 First define custom instructions
 
-```python
-custom_instructions="""Emergency intake mode:Store ALL symptoms and observations immediately.
-Flag for later review and verification."""
- 
+```typescript
+const customInstructions = `Emergency intake mode: Store ALL symptoms and observations immediately.
+Flag for later review and verification.`;
 ```
 
-```python
-# Emergency intake - store everything temporarily
-emergency_messages = [
-    {"role": "user", "content": "Patient arrived with chest pain and shortness of breath"}
-]
+```typescript
+// Emergency intake - store everything temporarily
+const emergencyMessages = [
+  { role: 'user', content: 'Patient arrived with chest pain and shortness of breath' }
+];
 
-client.add(
-    emergency_messages,
-    user_id="patient_456",
-    custom_instructions=custom_instructions,
-    metadata={"type": "emergency", "review_required": True}
-)
-
+await client.add(
+  emergencyMessages,
+  {
+    userId: 'patient_456',
+    customInstructions,
+    metadata: { type: 'emergency', reviewRequired: true }
+  }
+);
 ```
 
 This is useful for:

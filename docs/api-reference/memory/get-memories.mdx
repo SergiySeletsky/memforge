@@ -15,22 +15,18 @@ The v2 get memories API is powerful and flexible, allowing for more precise memo
 - `*`: Wildcard character that matches everything
 
 <CodeGroup>
-```python Code
-memories = client.get_all(
-    filters={
-        "AND": [
-            {
-                "user_id": "alex"
-            },
-            {
-                "created_at": {"gte": "2024-07-01", "lte": "2024-07-31"}
-            }
-        ]
-    }
-)
+```typescript Code
+const memories = await client.getAll({
+  filters: {
+    AND: [
+      { userId: "alex" },
+      { created_at: { gte: "2024-07-01", lte: "2024-07-31" } }
+    ]
+  }
+});
 ```
 
-```python Output
+```json Output
 {
     "results": [
         {
@@ -57,16 +53,14 @@ memories = client.get_all(
 To retrieve graph memory relationships between entities, pass `output_format="v1.1"` in your request. This will return memories with entity and relationship information from the knowledge graph.
 
 <CodeGroup>
-```python Code
-memories = client.get_all(
-    filters={
-        "user_id": "alex"
-    },
-    output_format="v1.1"
-)
+```typescript Code
+const memories = await client.getAll({
+  filters: { userId: "alex" },
+  outputFormat: "v1.1"
+});
 ```
 
-```python Output
+```json Output
 {
     "results": [
         {

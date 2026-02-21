@@ -43,9 +43,8 @@ The custom update memory prompt tells Mem0 how to handle changes when new facts 
 
 ### Author the prompt
 
-<CodeGroup>
-```python Python
-UPDATE_MEMORY_PROMPT = """You are a smart memory manager which controls the memory of a system.
+```typescript
+const UPDATE_MEMORY_PROMPT = `You are a smart memory manager which controls the memory of a system.
 You can perform four operations: (1) add into the memory, (2) update the memory, (3) delete from the memory, and (4) no change.
 
 Based on the above four operations, the memory will change.
@@ -193,9 +192,18 @@ Please note to return the IDs in the output from the input IDs only and do not g
                 }
             ]
         }
-"""
+`;
 ```
-</CodeGroup>
+
+### Apply the prompt
+
+```typescript
+import { Memory } from 'mem0ai/oss';
+
+const memory = new Memory({
+  customUpdateMemoryPrompt: UPDATE_MEMORY_PROMPT,
+});
+```
 
 ### Define the expected output format
 

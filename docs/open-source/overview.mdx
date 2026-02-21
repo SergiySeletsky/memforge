@@ -19,17 +19,14 @@ Mem0 Open Source delivers the same adaptive memory engine as the platform, but p
 - **Extendable codebase**: Fork the repo, add providers, and ship custom automations.
 
 <Info>
-  Begin with the <Link href="/open-source/python-quickstart">Python quickstart</Link> (or the Node.js variant) to clone the repo, configure dependencies, and validate memory reads/writes locally.
+  Begin with the <Link href="/open-source/node-quickstart">Node.js quickstart</Link> to install the SDK, configure dependencies, and validate memory reads/writes locally.
 </Info>
 
 ## Choose your path
 
-<CardGroup cols={2}>
-  <Card title="Python Quickstart" icon="python" href="/open-source/python-quickstart">
-    Bootstrap CLI and verify add/search loop.
-  </Card>
+<CardGroup cols={1}>
   <Card title="Node.js Quickstart" icon="node" href="/open-source/node-quickstart">
-    Install TypeScript SDK and run starter script.
+    Install the TypeScript SDK and run the starter script.
   </Card>
 </CardGroup>
 
@@ -45,12 +42,9 @@ Mem0 Open Source delivers the same adaptive memory engine as the platform, but p
   </Card>
 </CardGroup>
 
-<CardGroup cols={2}>
+<CardGroup cols={1}>
   <Card title="Deploy with Docker Compose" icon="server" href="/cookbooks/companions/local-companion-ollama">
-    Reference deployment with REST endpoints.
-  </Card>
-  <Card title="Use the REST API" icon="code" href="/open-source/features/rest-api">
-    Async add/search flows and automation.
+    Reference deployment with Qdrant and the TypeScript SDK.
   </Card>
 </CardGroup>
 
@@ -81,7 +75,7 @@ Mem0 Open Source delivers the same adaptive memory engine as the platform, but p
   - History store: SQLite database at `~/.mem0/history.db`
   - Reranker: Disabled until you configure a provider
 
-  Override any component with <Link href="/open-source/configuration">`Memory.from_config`</Link>.
+  Override any component via the <Link href="/open-source/configuration">configuration guide</Link>.
 </Note>
 
 ## Keep going
@@ -96,10 +90,10 @@ Mem0 Open Source delivers the same adaptive memory engine as the platform, but p
     href="/platform/platform-vs-oss"
   />
   <Card
-    title="Run the Python Quickstart"
-    description="Clone the repo, install dependencies, and persist your first local memory."
+    title="Run the Node.js Quickstart"
+    description="Install the TypeScript SDK and persist your first local memory."
     icon="terminal"
-    href="/open-source/python-quickstart"
+    href="/open-source/node-quickstart"
   />
 </CardGroup>
 

@@ -185,9 +185,11 @@ export async function POST(request: NextRequest) {
       const createdMemories: any[] = [];
 
       for (const result of qdrantResponse.results) {
-        if (result.event === "ADD") {
-          const memoryId = result.id;
+        // TypeScript SDK puts event in metadata.event; Python SDK puts it top-level
+        const event: string = result.event ?? result.metadata?.event ?? "";
+        const memoryId = result.id as string;
 
+        if (event === "ADD") {
           const existing = db.select().from(memories).where(eq(memories.id, memoryId)).get();
 
           if (existing) {
@@ -222,7 +224,27 @@ export async function POST(request: NextRequest) {
 
           // Async categorization (fire-and-forget)
           categorizeMemory(memoryId, result.memory).catch(() => {});
+        } else if (event === "UPDATE") {
+          const existing = db.select().from(memories).where(eq(memories.id, memoryId)).get();
+          if (existing) {
+            db.update(memories)
+              .set({ content: result.memory, updatedAt: new Date().toISOString() })
+              .where(eq(memories.id, memoryId))
+              .run();
+            db.insert(memoryStatusHistory)
+              .values({
+                memoryId,
+                changedBy: user.id,
+                oldState: existing.state as MemoryState,
+                newState: existing.state as MemoryState,
+              })
+              .run();
+          }
+          createdMemories.push(memoryId);
+        } else if (event === "DELETE") {
+          await updateMemoryState(memoryId, "deleted" as MemoryState, user.id);
         }
+        // NONE: no change needed
       }
 
       if (createdMemories.length > 0) {

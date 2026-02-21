@@ -47,8 +47,6 @@
   <strong>⚡ +26% Accuracy vs. OpenAI Memory • 🚀 91% Faster • 💰 90% Fewer Tokens</strong>
 </p>
 
-> **🎉 mem0ai v1.0.0 is now available!** This major release includes API modernization, improved vector store support, and enhanced GCP integration. [See migration guide →](MIGRATION_GUIDE_v1.0.md)
-
 ##  🔥 Research Highlights
 - **+26% Accuracy** over OpenAI Memory on the LOCOMO benchmark
 - **91% Faster Responses** than full-context, ensuring low-latency at scale
@@ -84,58 +82,70 @@ Get up and running in minutes with automatic updates, analytics, and enterprise 
 
 ### Self-Hosted (Open Source)
 
-Install the sdk via pip:
+Install via npm:
 
-```bash
-pip install mem0ai
-```
-
-Install sdk via npm:
 ```bash
 npm install mem0ai
 ```
 
+Or via pip:
+```bash
+pip install mem0ai
+```
+
 ### Basic Usage
 
-Mem0 requires an LLM to function, with `gpt-4.1-nano-2025-04-14 from OpenAI as the default. However, it supports a variety of LLMs; for details, refer to our [Supported LLMs documentation](https://docs.mem0.ai/components/llms/overview).
+Mem0 requires an LLM to function, with `gpt-4.1-nano-2025-04-14` from OpenAI as the default. However, it supports a variety of LLMs; for details, refer to our [Supported LLMs documentation](https://docs.mem0.ai/components/llms/overview).
 
 First step is to instantiate the memory:
 
-```python
-from openai import OpenAI
-from mem0 import Memory
+```typescript
+import OpenAI from 'openai';
+import { Memory } from 'mem0ai/oss';
+import * as readline from 'readline';
 
-openai_client = OpenAI()
-memory = Memory()
+const openai = new OpenAI();
+const memory = new Memory();
 
-def chat_with_memories(message: str, user_id: str = "default_user") -> str:
-    # Retrieve relevant memories
-    relevant_memories = memory.search(query=message, user_id=user_id, limit=3)
-    memories_str = "\n".join(f"- {entry['memory']}" for entry in relevant_memories["results"])
+async function chatWithMemories(message: string, userId = 'default_user'): Promise<string> {
+  // Retrieve relevant memories
+  const searchResult = await memory.search(message, { userId, limit: 3 });
+  const memoriesStr = searchResult.results
+    .map((entry: any) => `- ${entry.memory}`)
+    .join('\n');
 
-    # Generate Assistant response
-    system_prompt = f"You are a helpful AI. Answer the question based on query and memories.\nUser Memories:\n{memories_str}"
-    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": message}]
-    response = openai_client.chat.completions.create(model="gpt-4.1-nano-2025-04-14", messages=messages)
-    assistant_response = response.choices[0].message.content
+  // Generate assistant response
+  const systemPrompt = `You are a helpful AI. Answer based on the query and memories.\nUser Memories:\n${memoriesStr}`;
+  const messages: any[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: message },
+  ];
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4.1-nano-2025-04-14',
+    messages,
+  });
+  const assistantResponse = response.choices[0].message.content ?? '';
 
-    # Create new memories from the conversation
-    messages.append({"role": "assistant", "content": assistant_response})
-    memory.add(messages, user_id=user_id)
+  // Store the conversation in memory
+  messages.push({ role: 'assistant', content: assistantResponse });
+  await memory.add(messages, { userId });
 
-    return assistant_response
+  return assistantResponse;
+}
 
-def main():
-    print("Chat with AI (type 'exit' to quit)")
-    while True:
-        user_input = input("You: ").strip()
-        if user_input.lower() == 'exit':
-            print("Goodbye!")
-            break
-        print(f"AI: {chat_with_memories(user_input)}")
+async function main() {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  console.log("Chat with AI (type 'exit' to quit)");
+  const ask = () =>
+    rl.question('You: ', async (input) => {
+      if (input.trim().toLowerCase() === 'exit') { console.log('Goodbye!'); rl.close(); return; }
+      console.log(`AI: ${await chatWithMemories(input.trim())}`);
+      ask();
+    });
+  ask();
+}
 
-if __name__ == "__main__":
-    main()
+main();
 ```
 
 For detailed integration steps, see the [Quickstart](https://docs.mem0.ai/quickstart) and [API Reference](https://docs.mem0.ai/api-reference).

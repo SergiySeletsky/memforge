@@ -25,52 +25,50 @@ By the end, you'll have a working fitness companion and know how to handle commo
 
 Max wants to train for a marathon. He starts chatting with Ray, an AI running coach.
 
-```python
-from openai import OpenAI
-from mem0 import MemoryClient
+```typescript
+import OpenAI from 'openai';
+import MemoryClient from 'mem0ai';
 
-openai_client = OpenAI(api_key="your-openai-key")
-mem0_client = MemoryClient(api_key="your-mem0-key")
+const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const mem0Client = new MemoryClient({ apiKey: process.env.MEM0_API_KEY! });
 
-def chat(user_input, user_id):
-    # Retrieve relevant memories
-    memories = mem0_client.search(user_input, user_id=user_id, limit=5)
-    context = "\\n".join(m["memory"] for m in memories["results"])
+async function chat(userInput: string, userId: string): Promise<string> {
+  // Retrieve relevant memories
+  const memoriesResult = await mem0Client.search(userInput, { userId, limit: 5 });
+  const context = memoriesResult.results.map((m: any) => m.memory).join('\n');
 
-    # Call LLM with memory context
-    response = openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": f"You're Ray, a running coach. Memories:\\n{context}"},
-            {"role": "user", "content": user_input}
-        ]
-    ).choices[0].message.content
+  // Call LLM with memory context
+  const response = (await openaiClient.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: `You're Ray, a running coach. Memories:\n${context}` },
+      { role: 'user', content: userInput },
+    ],
+  })).choices[0].message.content ?? '';
 
-    # Store the exchange
-    mem0_client.add([
-        {"role": "user", "content": user_input},
-        {"role": "assistant", "content": response}
-    ], user_id=user_id)
+  // Store the exchange
+  await mem0Client.add([
+    { role: 'user', content: userInput },
+    { role: 'assistant', content: response },
+  ], { userId });
 
-    return response
-
+  return response;
+}
 ```
 
 **Session 1:**
 
-```python
-chat("I want to run a marathon in under 4 hours", user_id="max")
-# Output: "That's a solid goal. What's your current weekly mileage?"
-# Stored in Mem0: "Max wants to run sub-4 marathon"
-
+```typescript
+await chat('I want to run a marathon in under 4 hours', 'max');
+// Output: "That's a solid goal. What's your current weekly mileage?"
+// Stored in Mem0: "Max wants to run sub-4 marathon"
 ```
 
 **Session 2 (next day, app restarted):**
 
-```python
-chat("What should I focus on today?", user_id="max")
-# Output: "Based on your sub-4 marathon goal, let's work on building your aerobic base..."
-
+```typescript
+await chat('What should I focus on today?', 'max');
+// Output: "Based on your sub-4 marathon goal, let's work on building your aerobic base..."
 ```
 
 <Info>
@@ -94,13 +92,14 @@ Max mentions his knee hurts. That's different from his marathon goal - one is te
 
 Define custom categories at the project level. Mem0 will automatically tag memories with relevant categories based on content:
 
-```python
-mem0_client.project.update(custom_categories=[
-    {"goals": "Race targets and training objectives"},
-    {"constraints": "Injuries, limitations, recovery needs"},
-    {"preferences": "Training style, surfaces, schedules"}
-])
-
+```typescript
+await mem0Client.project.update({
+  customCategories: [
+    { name: 'goals', description: 'Race targets and training objectives' },
+    { name: 'constraints', description: 'Injuries, limitations, recovery needs' },
+    { name: 'preferences', description: 'Training style, surfaces, schedules' },
+  ],
+});
 ```
 
 <Note>
@@ -109,48 +108,43 @@ mem0_client.project.update(custom_categories=[
 
 Now when you add memories, Mem0 automatically assigns the appropriate categories:
 
-```python
-# Add goal - Mem0 automatically tags it as "goals"
-mem0_client.add(
-    [{"role": "user", "content": "Sub-4 marathon is my A-race"}],
-    user_id="max"
-)
+```typescript
+// Add goal - Mem0 automatically tags it as "goals"
+await mem0Client.add(
+  [{ role: 'user', content: "Sub-4 marathon is my A-race" }],
+  { userId: 'max' }
+);
 
-# Add constraint - Mem0 automatically tags it as "constraints"
-mem0_client.add(
-    [{"role": "user", "content": "My right knee flares up on downhills"}],
-    user_id="max"
-)
-
+// Add constraint - Mem0 automatically tags it as "constraints"
+await mem0Client.add(
+  [{ role: 'user', content: 'My right knee flares up on downhills' }],
+  { userId: 'max' }
+);
 ```
 
 Mem0 reads the content and intelligently picks which categories apply. You define the palette, it handles the tagging.
 
 **Important:** You cannot force specific categories. Mem0's platform decides which categories are relevant based on content. If you need to force-tag something, use `metadata` instead:
 
-```python
-# Force tag using metadata (not categories)
-mem0_client.add(
-    [{"role": "user", "content": "Some workout note"}],
-    user_id="max",
-    metadata={"workout_type": "speed", "forced_tag": "custom_label"}
-)
-
+```typescript
+// Force tag using metadata (not categories)
+await mem0Client.add(
+  [{ role: 'user', content: 'Some workout note' }],
+  { userId: 'max', metadata: { workout_type: 'speed', forced_tag: 'custom_label' } }
+);
 ```
 
 ### Filtering by Category
 
 Retrieve just constraints for workout planning:
 
-```python
-constraints = mem0_client.search(
-    "injury concerns",
-    user_id="max",
-    filters={"categories": {"in": ["constraints"]}}
-)
-print([m["memory"] for m in constraints["results"]])
-# Output: ["Max's right knee flares up on downhills"]
-
+```typescript
+const constraints = await mem0Client.search(
+  'injury concerns',
+  { userId: 'max', filters: { categories: { in: ['constraints'] } } }
+);
+console.log(constraints.results.map((m: any) => m.memory));
+// Output: ["Max's right knee flares up on downhills"]
 ```
 
 Ray can plan workouts that avoid aggravating Max's knee, without pulling in race goals or other unrelated memories.
@@ -163,11 +157,10 @@ Ray can plan workouts that avoid aggravating Max's knee, without pulling in race
 
 Run the basic loop for a week and check what's stored:
 
-```python
-memories = mem0_client.get_all(filters={"AND": [{"user_id": "max"}]})
-print([m["memory"] for m in memories["results"]])
-# Output: ["Max wants to run marathon under 4 hours", "hey", "lol ok", "cool thanks", "gtg bye"]
-
+```typescript
+const memories = await mem0Client.getAll({ filters: { AND: [{ user_id: 'max' }] } });
+console.log(memories.results.map((m: any) => m.memory));
+// Output: ["Max wants to run marathon under 4 hours", "hey", "lol ok", "cool thanks", "gtg bye"]
 ```
 
 <Warning>
@@ -180,8 +173,9 @@ Noise. Greetings and filler clutter the memory.
 
 Tell Mem0 what matters:
 
-```python
-mem0_client.project.update(custom_instructions="""
+```typescript
+await mem0Client.project.update({
+  customInstructions: `
 Extract from running coach conversations:
 - Training goals and race targets
 - Physical constraints or injuries
@@ -192,20 +186,19 @@ Exclude:
 - Greetings and filler
 - Casual chatter
 - Hypotheticals unless planning related
-""")
-
+`,
+});
 ```
 
 Now chat again:
 
-```python
-chat("hey how's it going", user_id="max")
-chat("I prefer trail running over roads", user_id="max")
+```typescript
+await chat("hey how's it going", 'max');
+await chat('I prefer trail running over roads', 'max');
 
-memories = mem0_client.get_all(filters={"AND": [{"user_id": "max"}]})
-print([m["memory"] for m in memories["results"]])
-# Output: ["Max wants to run marathon under 4 hours", "Max prefers trail running over roads"]
-
+const filtered = await mem0Client.getAll({ filters: { AND: [{ user_id: 'max' }] } });
+console.log(filtered.results.map((m: any) => m.memory));
+// Output: ["Max wants to run marathon under 4 hours", "Max prefers trail running over roads"]
 ```
 
 <Info>
@@ -226,27 +219,25 @@ Max prefers direct feedback, not motivational fluff. Ray needs to remember how t
 
 Store agent personality:
 
-```python
-mem0_client.add(
-    [{"role": "system", "content": "Max wants direct, data-driven feedback. Skip motivational language."}],
-    agent_id="ray_coach"
-)
-
+```typescript
+await mem0Client.add(
+  [{ role: 'system', content: 'Max wants direct, data-driven feedback. Skip motivational language.' }],
+  { agentId: 'ray_coach' }
+);
 ```
 
 Retrieve agent style alongside user memories:
 
-```python
-# Get coach personality
-agent_memories = mem0_client.search("coaching style", agent_id="ray_coach")
-# Output: ["Max wants direct, data-driven feedback. Skip motivational language."]
+```typescript
+// Get coach personality
+const agentMemories = await mem0Client.search('coaching style', { agentId: 'ray_coach' });
+// Output: ["Max wants direct, data-driven feedback. Skip motivational language."]
 
-# Store conversations with agent_id
-mem0_client.add([
-    {"role": "user", "content": "How'd my run look today?"},
-    {"role": "assistant", "content": "Pace was 8:15/mile. Heart rate 152, zone 2."}
-], user_id="max", agent_id="ray_coach")
-
+// Store conversations with agentId
+await mem0Client.add([
+  { role: 'user', content: "How'd my run look today?" },
+  { role: 'assistant', content: 'Pace was 8:15/mile. Heart rate 152, zone 2.' },
+], { userId: 'max', agentId: 'ray_coach' });
 ```
 
 <Info>
@@ -263,19 +254,18 @@ No "Great job!" or "Keep it up!" - just data. Ray adapts to Max's preference.
 
 Don't send every single message to Mem0. Keep recent context in memory, let Mem0 handle the important long-term facts.
 
-```python
-# Store only meaningful exchanges in Mem0
-mem0_client.add([
-    {"role": "user", "content": "I want to run a marathon"},
-    {"role": "assistant", "content": "Let's build a training plan"}
-], user_id="max")
+```typescript
+// Store only meaningful exchanges in Mem0
+await mem0Client.add([
+  { role: 'user', content: 'I want to run a marathon' },
+  { role: 'assistant', content: "Let's build a training plan" },
+], { userId: 'max' });
 
-# Skip storing filler
-# "hey" → don't store
-# "cool thanks" → don't store
+// Skip storing filler
+// "hey" → don't store
+// "cool thanks" → don't store
 
-# Or rely on custom_instructions to filter automatically
-
+// Or rely on customInstructions to filter automatically
 ```
 
 Last 10 messages in your app's buffer. Important facts in Mem0. Faster, cheaper, still works.
@@ -288,17 +278,13 @@ Last 10 messages in your app's buffer. Important facts in Mem0. Faster, cheaper,
 
 Max tweaks his ankle. It'll heal in two weeks - the memory should expire too.
 
-```python
-from datetime import datetime, timedelta
+```typescript
+const expiration = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-expiration = (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d")
-
-mem0_client.add(
-    [{"role": "user", "content": "Rolled my left ankle, needs rest"}],
-    user_id="max",
-    expiration_date=expiration
-)
-
+await mem0Client.add(
+  [{ role: 'user', content: 'Rolled my left ankle, needs rest' }],
+  { userId: 'max', expirationDate: expiration }
+);
 ```
 
 In 14 days, this memory disappears automatically. Ray stops asking about the ankle.
@@ -309,60 +295,51 @@ In 14 days, this memory disappears automatically. Ray stops asking about the ank
 
 Here's the Mem0 setup combining everything:
 
-```python
-from mem0 import MemoryClient
-from datetime import datetime, timedelta
+```typescript
+import MemoryClient from 'mem0ai';
 
-mem0_client = MemoryClient(api_key="your-mem0-key")
+const mem0Client = new MemoryClient({ apiKey: process.env.MEM0_API_KEY! });
 
-# Configure memory filtering and categories
-mem0_client.project.update(
-    custom_instructions="""
-    Extract: goals, constraints, preferences, progress
-    Exclude: greetings, filler, casual chat
-    """,
-    custom_categories=[
-        {"name": "goals", "description": "Training targets"},
-        {"name": "constraints", "description": "Injuries and limitations"},
-        {"name": "preferences", "description": "Training style"}
-    ]
-)
-
+// Configure memory filtering and categories
+await mem0Client.project.update({
+  customInstructions: 'Extract: goals, constraints, preferences, progress\nExclude: greetings, filler, casual chat',
+  customCategories: [
+    { name: 'goals', description: 'Training targets' },
+    { name: 'constraints', description: 'Injuries and limitations' },
+    { name: 'preferences', description: 'Training style' },
+  ],
+});
 ```
 
 **Week 1 - Store goals and preferences:**
 
-```python
-mem0_client.add([
-    {"role": "user", "content": "I want to run a sub-4 marathon"},
-    {"role": "assistant", "content": "Got it. Let's build a training plan."}
-], user_id="max", agent_id="ray", categories=["goals"])
+```typescript
+await mem0Client.add([
+  { role: 'user', content: 'I want to run a sub-4 marathon' },
+  { role: 'assistant', content: "Got it. Let's build a training plan." },
+], { userId: 'max', agentId: 'ray', categories: ['goals'] });
 
-mem0_client.add([
-    {"role": "user", "content": "I prefer trail running over roads"}
-], user_id="max", categories=["preferences"])
-
+await mem0Client.add(
+  [{ role: 'user', content: 'I prefer trail running over roads' }],
+  { userId: 'max', categories: ['preferences'] }
+);
 ```
 
 **Week 3 - Temporary injury with expiration:**
 
-```python
-expiration = (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d")
-mem0_client.add(
-    [{"role": "user", "content": "Rolled ankle, need light workouts"}],
-    user_id="max",
-    categories=["constraints"],
-    expiration_date=expiration
-)
-
+```typescript
+const expiration = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+await mem0Client.add(
+  [{ role: 'user', content: 'Rolled ankle, need light workouts' }],
+  { userId: 'max', categories: ['constraints'], expirationDate: expiration }
+);
 ```
 
 **Retrieve for context:**
 
-```python
-memories = mem0_client.search("training plan", user_id="max", limit=5)
-# Gets: marathon goal, trail preference, ankle injury (if still valid)
-
+```typescript
+const memories = await mem0Client.search('training plan', { userId: 'max', limit: 5 });
+// Gets: marathon goal, trail preference, ankle injury (if still valid)
 ```
 
 Ray remembers goals, preferences, and personality. Handles temporary injuries. Works across sessions.
@@ -375,17 +352,12 @@ Ray remembers goals, preferences, and personality. Handles temporary injuries. W
 
 Training for Boston is different from training for New York. Separate the memory threads:
 
-```python
-mem0_client.add(messages, user_id="max", run_id="boston-2025")
-mem0_client.add(messages, user_id="max", run_id="nyc-2025")
+```typescript
+await mem0Client.add(messages, { userId: 'max', runId: 'boston-2025' });
+await mem0Client.add(messages, { userId: 'max', runId: 'nyc-2025' });
 
-# Retrieve only Boston memories
-boston_memories = mem0_client.search(
-    "training plan",
-    user_id="max",
-    run_id="boston-2025"
-)
-
+// Retrieve only Boston memories
+const bostonMemories = await mem0Client.search('training plan', { userId: 'max', runId: 'boston-2025' });
 ```
 
 Each race gets its own episodic boundary. No cross-contamination.
@@ -394,29 +366,30 @@ Each race gets its own episodic boundary. No cross-contamination.
 
 Max has 6 months of training logs to backfill:
 
-```python
-old_logs = [
-    [{"role": "user", "content": "Completed 20-mile long run"}],
-    [{"role": "user", "content": "Hit 8:00 pace on tempo run"}],
-]
+```typescript
+const oldLogs = [
+  [{ role: 'user', content: 'Completed 20-mile long run' }],
+  [{ role: 'user', content: 'Hit 8:00 pace on tempo run' }],
+];
 
-for log in old_logs:
-    mem0_client.add(log, user_id="max")
-
+for (const log of oldLogs) {
+  await mem0Client.add(log, { userId: 'max' });
+}
 ```
 
 ### Handling Contradictions
 
 Max changes his goal from sub-4 to sub-3:45:
 
-```python
-# Find the old memory
-memories = mem0_client.get_all(filters={"AND": [{"user_id": "max"}]})
-goal_memory = [m for m in memories["results"] if "sub-4" in m["memory"]][0]
+```typescript
+// Find the old memory
+const allMemories = await mem0Client.getAll({ filters: { AND: [{ user_id: 'max' }] } });
+const goalMemory = allMemories.results.find((m: any) => m.memory.includes('sub-4'));
 
-# Update it
-mem0_client.update(goal_memory["id"], "Max wants to run sub-3:45 marathon")
-
+// Update it
+if (goalMemory) {
+  await mem0Client.update(goalMemory.id, 'Max wants to run sub-3:45 marathon');
+}
 ```
 
 Update instead of creating duplicates.
@@ -425,10 +398,9 @@ Update instead of creating duplicates.
 
 Max works with Ray for running and Jordan for strength training:
 
-```python
-chat("easy run today", user_id="max", agent_id="ray")
-chat("leg day workout", user_id="max", agent_id="jordan")
-
+```typescript
+await chat('easy run today', 'max', 'ray');
+await chat('leg day workout', 'max', 'jordan');
 ```
 
 Each coach maintains separate personality memory while sharing user context.
@@ -437,45 +409,39 @@ Each coach maintains separate personality memory while sharing user context.
 
 Prioritize recent training over old data:
 
-```python
-recent = mem0_client.search(
-    "training progress",
-    user_id="max",
-    filters={"created_at": {"gte": "2025-10-01"}}
-)
-
+```typescript
+const recent = await mem0Client.search(
+  'training progress',
+  { userId: 'max', filters: { created_at: { gte: '2025-10-01' } } }
+);
 ```
 
 ### Metadata Tagging
 
 Tag workouts by type:
 
-```python
-mem0_client.add(
-    [{"role": "user", "content": "10x400m intervals"}],
-    user_id="max",
-    metadata={"workout_type": "speed", "intensity": "high"}
-)
+```typescript
+await mem0Client.add(
+  [{ role: 'user', content: '10x400m intervals' }],
+  { userId: 'max', metadata: { workout_type: 'speed', intensity: 'high' } }
+);
 
-# Later, find all speed workouts
-speed_sessions = mem0_client.search(
-    "speed work",
-    user_id="max",
-    filters={"metadata": {"workout_type": "speed"}}
-)
-
+// Later, find all speed workouts
+const speedSessions = await mem0Client.search(
+  'speed work',
+  { userId: 'max', filters: { metadata: { workout_type: 'speed' } } }
+);
 ```
 
 ### Pruning Old Memories
 
 Delete irrelevant memories:
 
-```python
-mem0_client.delete(memory_id="mem_xyz")
+```typescript
+await mem0Client.delete('mem_xyz');
 
-# Or clear an entire run_id
-mem0_client.delete_all(user_id="max", run_id="old-training-cycle")
-
+// Or clear an entire runId
+await mem0Client.deleteAll({ userId: 'max', runId: 'old-training-cycle' });
 ```
 
 ---

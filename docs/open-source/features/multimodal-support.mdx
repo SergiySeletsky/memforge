@@ -43,30 +43,8 @@ Multimodal support lets Mem0 extract facts from images alongside regular text. A
 
 ### Add image messages from URLs
 
-<CodeGroup>
-```python Python
-from mem0 import Memory
-
-client = Memory()
-
-messages = [
-    {"role": "user", "content": "Hi, my name is Alice."},
-    {
-        "role": "user",
-        "content": {
-            "type": "image_url",
-            "image_url": {
-                "url": "https://example.com/menu.jpg"
-            }
-        }
-    }
-]
-
-client.add(messages, user_id="alice")
-```
-
-```ts TypeScript
-import { Memory } from "mem0ai";
+```typescript
+import { Memory } from 'mem0ai/oss';
 
 const client = new Memory();
 
@@ -81,9 +59,8 @@ const messages = [
   }
 ];
 
-await client.add(messages, { user_id: "alice" });
+await client.add(messages, { userId: "alice" });
 ```
-</CodeGroup>
 
 <Info icon="check">
   Inspect the response payload—the memories list should include entries extracted from the menu image as well as the text turns.
@@ -91,39 +68,9 @@ await client.add(messages, { user_id: "alice" });
 
 ### Upload local images as base64
 
-<CodeGroup>
-```python Python
-import base64
-from mem0 import Memory
-
-def encode_image(image_path):
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode("utf-8")
-
-client = Memory()
-base64_image = encode_image("path/to/your/image.jpg")
-
-messages = [
-    {
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "What's in this image?"},
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{base64_image}"
-                }
-            }
-        ]
-    }
-]
-
-client.add(messages, user_id="alice")
-```
-
-```ts TypeScript
+```typescript
 import fs from "fs";
-import { Memory } from "mem0ai";
+import { Memory } from 'mem0ai/oss';
 
 function encodeImage(imagePath: string) {
   const buffer = fs.readFileSync(imagePath);
@@ -148,9 +95,8 @@ const messages = [
   }
 ];
 
-await client.add(messages, { user_id: "alice" });
+await client.add(messages, { userId: "alice" });
 ```
-</CodeGroup>
 
 <Tip>
   Keep base64 payloads under 5 MB to speed up uploads and avoid hitting the 20 MB limit.
@@ -162,33 +108,25 @@ await client.add(messages, { user_id: "alice" });
 
 ### Restaurant menu memory
 
-```python
-from mem0 import Memory
+```typescript
+import { Memory } from 'mem0ai/oss';
 
-client = Memory()
+const client = new Memory();
 
-messages = [
-    {
-        "role": "user",
-        "content": "Help me remember which dishes I liked."
-    },
-    {
-        "role": "user",
-        "content": {
-            "type": "image_url",
-            "image_url": {
-                "url": "https://example.com/restaurant-menu.jpg"
-            }
-        }
-    },
-    {
-        "role": "user",
-        "content": "I’m allergic to peanuts and prefer vegetarian meals."
+const messages = [
+  { role: "user", content: "Help me remember which dishes I liked." },
+  {
+    role: "user",
+    content: {
+      type: "image_url",
+      image_url: { url: "https://example.com/restaurant-menu.jpg" }
     }
-]
+  },
+  { role: "user", content: "I'm allergic to peanuts and prefer vegetarian meals." }
+];
 
-result = client.add(messages, user_id="user123")
-print(result)
+const result = await client.add(messages, { userId: "user123" });
+console.log(result);
 ```
 
 <Info icon="check">
@@ -197,24 +135,19 @@ print(result)
 
 ### Document capture
 
-```python
-messages = [
-    {
-        "role": "user",
-        "content": "Store this receipt information for expenses."
-    },
-    {
-        "role": "user",
-        "content": {
-            "type": "image_url",
-            "image_url": {
-                "url": "https://example.com/receipt.jpg"
-            }
-        }
+```typescript
+const messages = [
+  { role: "user", content: "Store this receipt information for expenses." },
+  {
+    role: "user",
+    content: {
+      type: "image_url",
+      image_url: { url: "https://example.com/receipt.jpg" }
     }
-]
+  }
+];
 
-client.add(messages, user_id="user123")
+await client.add(messages, { userId: "user123" });
 ```
 
 <Tip>
@@ -223,35 +156,8 @@ client.add(messages, user_id="user123")
 
 ### Error handling
 
-<CodeGroup>
-```python Python
-from mem0 import Memory
-from mem0.exceptions import InvalidImageError, FileSizeError
-
-client = Memory()
-
-try:
-    messages = [{
-        "role": "user",
-        "content": {
-            "type": "image_url",
-            "image_url": {"url": "https://example.com/image.jpg"}
-        }
-    }]
-
-    client.add(messages, user_id="user123")
-    print("Image processed successfully")
-
-except InvalidImageError:
-    print("Invalid image format or corrupted file")
-except FileSizeError:
-    print("Image file too large")
-except Exception as exc:
-    print(f"Unexpected error: {exc}")
-```
-
-```ts TypeScript
-import { Memory } from "mem0ai";
+```typescript
+import { Memory } from 'mem0ai/oss';
 
 const client = new Memory();
 
@@ -264,7 +170,7 @@ try {
     }
   }];
 
-  await client.add(messages, { user_id: "user123" });
+  await client.add(messages, { userId: "user123" });
   console.log("Image processed successfully");
 } catch (error: any) {
   if (error.type === "invalid_image") {
@@ -276,7 +182,6 @@ try {
   }
 }
 ```
-</CodeGroup>
 
 <Warning>
   Fail fast on invalid formats so you can prompt users to re-upload before losing their context.

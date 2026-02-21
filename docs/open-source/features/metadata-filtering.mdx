@@ -17,11 +17,6 @@ Enhanced metadata filtering in Mem0 1.0.0 lets you run complex queries across me
   Enhanced filtering requires Mem0 1.0.0 or later and a vector store that supports the operators you enable. Unsupported operators fall back to simple equality filters.
 </Warning>
 
-<Note>
-  The TypeScript SDK accepts the same filter shape shown here—transpose the dictionaries to objects and reuse the keys unchanged.
-</Note>
-
----
 
 ## Feature anatomy
 
@@ -43,17 +38,16 @@ Enhanced metadata filtering in Mem0 1.0.0 lets you run complex queries across me
 
 Start with key-value filters when you need direct matches on metadata fields.
 
-```python
-from mem0 import Memory
+```typescript
+import { Memory } from 'mem0ai/oss';
 
-m = Memory()
+const memory = new Memory();
 
-# Search with simple metadata filters
-results = m.search(
-    "What are my preferences?",
-    user_id="alice",
-    filters={"category": "preferences"}
-)
+// Search with simple metadata filters
+const results = await memory.search(
+  'What are my preferences?',
+  { userId: 'alice', filters: { category: 'preferences' } }
+);
 ```
 
 <Info icon="check">
@@ -64,44 +58,50 @@ results = m.search(
 
 Layer greater-than/less-than comparisons to rank results by score, confidence, or any numeric field. Equality helpers (`eq`, `ne`) keep string and boolean checks explicit.
 
-```python
-# Greater than / Less than
-results = m.search(
-    "recent activities",
-    user_id="alice",
-    filters={
-        "score": {"gt": 0.8},
-        "priority": {"gte": 5},
-        "confidence": {"lt": 0.9},
-        "rating": {"lte": 3}
-    }
-)
+```typescript
+// Greater than / Less than
+const results1 = await memory.search(
+  'recent activities',
+  {
+    userId: 'alice',
+    filters: {
+      score: { gt: 0.8 },
+      priority: { gte: 5 },
+      confidence: { lt: 0.9 },
+      rating: { lte: 3 },
+    },
+  }
+);
 
-# Equality operators
-results = m.search(
-    "specific content",
-    user_id="alice",
-    filters={
-        "status": {"eq": "active"},
-        "archived": {"ne": True}
-    }
-)
+// Equality operators
+const results2 = await memory.search(
+  'specific content',
+  {
+    userId: 'alice',
+    filters: {
+      status: { eq: 'active' },
+      archived: { ne: true },
+    },
+  }
+);
 ```
 
 ### List-based operators
 
 Use `in` and `nin` when you want to pre-approve or exclude specific values without writing multiple equality checks.
 
-```python
-# In / Not in operators
-results = m.search(
-    "multi-category search",
-    user_id="alice",
-    filters={
-        "category": {"in": ["food", "travel", "entertainment"]},
-        "status": {"nin": ["deleted", "archived"]}
-    }
-)
+```typescript
+// In / Not in operators
+const results = await memory.search(
+  'multi-category search',
+  {
+    userId: 'alice',
+    filters: {
+      category: { in: ['food', 'travel', 'entertainment'] },
+      status: { nin: ['deleted', 'archived'] },
+    },
+  }
+);
 ```
 
 <Info icon="check">
@@ -112,98 +112,105 @@ results = m.search(
 
 `contains` and `icontains` capture substring matches, making it easy to scan descriptions or tags for keywords without retrieving irrelevant memories.
 
-```python
-# Text matching operators
-results = m.search(
-    "content search",
-    user_id="alice",
-    filters={
-        "title": {"contains": "meeting"},
-        "description": {"icontains": "important"},
-        "tags": {"contains": "urgent"}
-    }
-)
+```typescript
+// Text matching operators
+const results = await memory.search(
+  'content search',
+  {
+    userId: 'alice',
+    filters: {
+      title: { contains: 'meeting' },
+      description: { icontains: 'important' },
+      tags: { contains: 'urgent' },
+    },
+  }
+);
 ```
 
 ### Wildcard matching
 
 Allow any value for a field while still requiring the field to exist—handy when the mere presence of a field matters.
 
-```python
-# Match any value for a field
-results = m.search(
-    "all with category",
-    user_id="alice",
-    filters={
-        "category": "*"
-    }
-)
+```typescript
+// Match any value for a field
+const results = await memory.search(
+  'all with category',
+  { userId: 'alice', filters: { category: '*' } }
+);
 ```
 
 ### Logical combinations
 
 Combine filters with `AND`, `OR`, and `NOT` to express complex decision trees. Nest logical operators to encode multi-branch workflows.
 
-```python
-# Logical AND
-results = m.search(
-    "complex query",
-    user_id="alice",
-    filters={
-        "AND": [
-            {"category": "work"},
-            {"priority": {"gte": 7}},
-            {"status": {"ne": "completed"}}
-        ]
-    }
-)
+```typescript
+// Logical AND
+const andResults = await memory.search(
+  'complex query',
+  {
+    userId: 'alice',
+    filters: {
+      AND: [
+        { category: 'work' },
+        { priority: { gte: 7 } },
+        { status: { ne: 'completed' } },
+      ],
+    },
+  }
+);
 
-# Logical OR
-results = m.search(
-    "flexible query",
-    user_id="alice",
-    filters={
-        "OR": [
-            {"category": "urgent"},
-            {"priority": {"gte": 9}},
-            {"deadline": {"contains": "today"}}
-        ]
-    }
-)
+// Logical OR
+const orResults = await memory.search(
+  'flexible query',
+  {
+    userId: 'alice',
+    filters: {
+      OR: [
+        { category: 'urgent' },
+        { priority: { gte: 9 } },
+        { deadline: { contains: 'today' } },
+      ],
+    },
+  }
+);
 
-# Logical NOT
-results = m.search(
-    "exclusion query",
-    user_id="alice",
-    filters={
-        "NOT": [
-            {"category": "archived"},
-            {"status": "deleted"}
-        ]
-    }
-)
+// Logical NOT
+const notResults = await memory.search(
+  'exclusion query',
+  {
+    userId: 'alice',
+    filters: {
+      NOT: [
+        { category: 'archived' },
+        { status: 'deleted' },
+      ],
+    },
+  }
+);
 
-# Complex nested logic
-results = m.search(
-    "advanced query",
-    user_id="alice",
-    filters={
-        "AND": [
-            {
-                "OR": [
-                    {"category": "work"},
-                    {"category": "personal"}
-                ]
-            },
-            {"priority": {"gte": 5}},
-            {
-                "NOT": [
-                    {"status": "archived"}
-                ]
-            }
-        ]
-    }
-)
+// Complex nested logic
+const nestedResults = await memory.search(
+  'advanced query',
+  {
+    userId: 'alice',
+    filters: {
+      AND: [
+        {
+          OR: [
+            { category: 'work' },
+            { category: 'personal' },
+          ],
+        },
+        { priority: { gte: 5 } },
+        {
+          NOT: [
+            { status: 'archived' },
+          ],
+        },
+      ],
+    },
+  }
+);
 ```
 
 <Info icon="check">
@@ -216,18 +223,18 @@ results = m.search(
 
 Tune your vector store so filter-heavy queries stay fast. Index fields you frequently filter on and keep complex checks for later in the evaluation order.
 
-```python
-# Ensure your vector store supports indexing on filtered fields
-config = {
-    "vector_store": {
-        "provider": "qdrant",
-        "config": {
-            "host": "localhost",
-            "port": 6333,
-            "indexed_fields": ["category", "priority", "status", "user_id"]
-        }
-    }
-}
+```typescript
+const config = {
+  vectorStore: {
+    provider: 'qdrant',
+    config: {
+      host: 'localhost',
+      port: 6333,
+    },
+  },
+};
+
+const memory = new Memory(config);
 ```
 
 <Info icon="check">
@@ -238,23 +245,23 @@ config = {
   Put simple key=value filters on indexed fields before your range or text conditions so the store trims results early.
 </Tip>
 
-```python
-# More efficient: Filter on indexed fields first
-good_filters = {
-    "AND": [
-        {"user_id": "alice"},
-        {"category": "work"},
-        {"content": {"contains": "meeting"}}
-    ]
-}
+```typescript
+// More efficient: Filter on indexed fields first
+const goodFilters = {
+  AND: [
+    { user_id: 'alice' },
+    { category: 'work' },
+    { content: { contains: 'meeting' } },
+  ],
+};
 
-# Less efficient: Complex operations first
-avoid_filters = {
-    "AND": [
-        {"description": {"icontains": "complex text search"}},
-        {"user_id": "alice"}
-    ]
-}
+// Less efficient: Complex operations first
+const avoidFilters = {
+  AND: [
+    { description: { icontains: 'complex text search' } },
+    { user_id: 'alice' },
+  ],
+};
 ```
 
 <Info icon="check">
@@ -282,28 +289,29 @@ Vector store support varies. Confirm operator coverage before shipping:
   If an operator is unsupported, most stores silently ignore that branch. Add validation before execution so you can fall back to simpler queries instead of returning empty results.
 </Warning>
 
-### Migrate from earlier filters
+### Migrate from simple to enhanced filters
 
-```python
-# Before (v0.x) - simple key-value filtering only
-results = m.search(
-    "query",
-    user_id="alice",
-    filters={"category": "work", "status": "active"}
-)
+```typescript
+// Before — simple key-value filtering
+const beforeResults = await memory.search(
+  'query',
+  { userId: 'alice', filters: { category: 'work', status: 'active' } }
+);
 
-# After (v1.0.0) - enhanced filtering with operators
-results = m.search(
-    "query",
-    user_id="alice",
-    filters={
-        "AND": [
-            {"category": "work"},
-            {"status": {"ne": "archived"}},
-            {"priority": {"gte": 5}}
-        ]
-    }
-)
+// After — enhanced filtering with operators
+const afterResults = await memory.search(
+  'query',
+  {
+    userId: 'alice',
+    filters: {
+      AND: [
+        { category: 'work' },
+        { status: { ne: 'archived' } },
+        { priority: { gte: 5 } },
+      ],
+    },
+  }
+);
 ```
 
 <Note>
@@ -316,25 +324,27 @@ results = m.search(
 
 ### Project management filtering
 
-```python
-# Find high-priority active tasks
-results = m.search(
-    "What tasks need attention?",
-    user_id="project_manager",
-    filters={
-        "AND": [
-            {"project": {"in": ["alpha", ""]}},
-            {"priority": {"gte": 8}},
-            {"status": {"ne": "completed"}},
-            {
-                "OR": [
-                    {"assignee": "alice"},
-                    {"assignee": "bob"}
-                ]
-            }
-        ]
-    }
-)
+```typescript
+// Find high-priority active tasks
+const projectResults = await memory.search(
+  'What tasks need attention?',
+  {
+    userId: 'project_manager',
+    filters: {
+      AND: [
+        { project: { in: ['alpha', 'beta'] } },
+        { priority: { gte: 8 } },
+        { status: { ne: 'completed' } },
+        {
+          OR: [
+            { assignee: 'alice' },
+            { assignee: 'bob' },
+          ],
+        },
+      ],
+    },
+  }
+);
 ```
 
 <Info icon="check">
@@ -343,24 +353,26 @@ results = m.search(
 
 ### Customer support filtering
 
-```python
-# Find recent unresolved tickets
-results = m.search(
-    "pending support issues",
-    agent_id="support_bot",
-    filters={
-        "AND": [
-            {"ticket_status": {"ne": "resolved"}},
-            {"priority": {"in": ["high", "critical"]}},
-            {"created_date": {"gte": "2024-01-01"}},
-            {
-                "NOT": [
-                    {"category": "spam"}
-                ]
-            }
-        ]
-    }
-)
+```typescript
+// Find recent unresolved tickets
+const supportResults = await memory.search(
+  'pending support issues',
+  {
+    agentId: 'support_bot',
+    filters: {
+      AND: [
+        { ticket_status: { ne: 'resolved' } },
+        { priority: { in: ['high', 'critical'] } },
+        { created_date: { gte: '2024-01-01' } },
+        {
+          NOT: [
+            { category: 'spam' },
+          ],
+        },
+      ],
+    },
+  }
+);
 ```
 
 <Tip>
@@ -369,25 +381,27 @@ results = m.search(
 
 ### Content recommendation filtering
 
-```python
-# Personalized content filtering
-results = m.search(
-    "recommend content",
-    user_id="reader123",
-    filters={
-        "AND": [
-            {
-                "OR": [
-                    {"genre": {"in": ["sci-fi", "fantasy"]}},
-                    {"author": {"contains": "favorite"}}
-                ]
-            },
-            {"rating": {"gte": 4.0}},
-            {"read_status": {"ne": "completed"}},
-            {"language": "english"}
-        ]
-    }
-)
+```typescript
+// Personalized content filtering
+const contentResults = await memory.search(
+  'recommend content',
+  {
+    userId: 'reader123',
+    filters: {
+      AND: [
+        {
+          OR: [
+            { genre: { in: ['sci-fi', 'fantasy'] } },
+            { author: { contains: 'favorite' } },
+          ],
+        },
+        { rating: { gte: 4.0 } },
+        { read_status: { ne: 'completed' } },
+        { language: 'english' },
+      ],
+    },
+  }
+);
 ```
 
 <Info icon="check">
@@ -396,22 +410,24 @@ results = m.search(
 
 ### Handle invalid operators
 
-```python
-try:
-    results = m.search(
-        "test query",
-        user_id="alice",
-        filters={
-            "invalid_operator": {"unknown": "value"}
-        }
-    )
-except ValueError as e:
-    print(f"Filter error: {e}")
-    results = m.search(
-        "test query",
-        user_id="alice",
-        filters={"category": "general"}
-    )
+```typescript
+try {
+  const results = await memory.search(
+    'test query',
+    {
+      userId: 'alice',
+      filters: {
+        invalid_operator: { unknown: 'value' },
+      },
+    }
+  );
+} catch (e) {
+  console.error('Filter error:', e);
+  const fallback = await memory.search(
+    'test query',
+    { userId: 'alice', filters: { category: 'general' } }
+  );
+}
 ```
 
 <Warning>

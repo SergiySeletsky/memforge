@@ -1,4 +1,4 @@
-import neo4j, { Driver } from "neo4j-driver";
+﻿import neo4j, { Driver } from "neo4j-driver";
 import { BM25 } from "../utils/bm25";
 import { GraphStoreConfig } from "../graphs/configs";
 import { MemoryConfig } from "../types";
@@ -320,22 +320,22 @@ export class MemoryGraph {
           MATCH (n)
           WHERE n.embedding IS NOT NULL AND n.user_id = $user_id
           WITH n,
-              round(reduce(dot = 0.0, i IN range(0, size(n.embedding)-1) | dot + n.embedding[i] * $n_embedding[i]) /
+              reduce(dot = 0.0, i IN range(0, size(n.embedding)-1) | dot + n.embedding[i] * $n_embedding[i]) /
               (sqrt(reduce(l2 = 0.0, i IN range(0, size(n.embedding)-1) | l2 + n.embedding[i] * n.embedding[i])) *
-              sqrt(reduce(l2 = 0.0, i IN range(0, size($n_embedding)-1) | l2 + $n_embedding[i] * $n_embedding[i]))), 4) AS similarity
+              sqrt(reduce(l2 = 0.0, i IN range(0, size($n_embedding)-1) | l2 + $n_embedding[i] * $n_embedding[i]))) AS similarity
           WHERE similarity >= $threshold
           MATCH (n)-[r]->(m)
-          RETURN n.name AS source, elementId(n) AS source_id, type(r) AS relationship, elementId(r) AS relation_id, m.name AS destination, elementId(m) AS destination_id, similarity
+          RETURN n.name AS source, toString(id(n)) AS source_id, type(r) AS relationship, toString(id(r)) AS relation_id, m.name AS destination, toString(id(m)) AS destination_id, similarity
           UNION
           MATCH (n)
           WHERE n.embedding IS NOT NULL AND n.user_id = $user_id
           WITH n,
-              round(reduce(dot = 0.0, i IN range(0, size(n.embedding)-1) | dot + n.embedding[i] * $n_embedding[i]) /
+              reduce(dot = 0.0, i IN range(0, size(n.embedding)-1) | dot + n.embedding[i] * $n_embedding[i]) /
               (sqrt(reduce(l2 = 0.0, i IN range(0, size(n.embedding)-1) | l2 + n.embedding[i] * n.embedding[i])) *
-              sqrt(reduce(l2 = 0.0, i IN range(0, size($n_embedding)-1) | l2 + $n_embedding[i] * $n_embedding[i]))), 4) AS similarity
+              sqrt(reduce(l2 = 0.0, i IN range(0, size($n_embedding)-1) | l2 + $n_embedding[i] * $n_embedding[i]))) AS similarity
           WHERE similarity >= $threshold
           MATCH (m)-[r]->(n)
-          RETURN m.name AS source, elementId(m) AS source_id, type(r) AS relationship, elementId(r) AS relation_id, n.name AS destination, elementId(n) AS destination_id, similarity
+          RETURN m.name AS source, toString(id(m)) AS source_id, type(r) AS relationship, toString(id(r)) AS relation_id, n.name AS destination, toString(id(n)) AS destination_id, similarity
           ORDER BY similarity DESC
           LIMIT toInteger($limit)
         `;
@@ -479,7 +479,7 @@ export class MemoryGraph {
         ) {
           cypher = `
             MATCH (source)
-            WHERE elementId(source) = $source_id
+            WHERE toString(id(source)) = $source_id
             MERGE (destination:${destinationType} {name: $destination_name, user_id: $user_id})
             ON CREATE SET
                 destination.created = timestamp(),
@@ -502,7 +502,7 @@ export class MemoryGraph {
         ) {
           cypher = `
             MATCH (destination)
-            WHERE elementId(destination) = $destination_id
+            WHERE toString(id(destination)) = $destination_id
             MERGE (source:${sourceType} {name: $source_name, user_id: $user_id})
             ON CREATE SET
                 source.created = timestamp(),
@@ -525,9 +525,9 @@ export class MemoryGraph {
         ) {
           cypher = `
             MATCH (source)
-            WHERE elementId(source) = $source_id
+            WHERE toString(id(source)) = $source_id
             MATCH (destination)
-            WHERE elementId(destination) = $destination_id
+            WHERE toString(id(destination)) = $destination_id
             MERGE (source)-[r:${relationship}]->(destination)
             ON CREATE SET 
                 r.created_at = timestamp(),
@@ -594,21 +594,20 @@ export class MemoryGraph {
         AND source_candidate.user_id = $user_id
 
         WITH source_candidate,
-            round(
-                reduce(dot = 0.0, i IN range(0, size(source_candidate.embedding)-1) |
+            reduce(dot = 0.0, i IN range(0, size(source_candidate.embedding)-1) |
                     dot + source_candidate.embedding[i] * $source_embedding[i]) /
                 (sqrt(reduce(l2 = 0.0, i IN range(0, size(source_candidate.embedding)-1) |
                     l2 + source_candidate.embedding[i] * source_candidate.embedding[i])) *
                 sqrt(reduce(l2 = 0.0, i IN range(0, size($source_embedding)-1) |
                     l2 + $source_embedding[i] * $source_embedding[i])))
-                , 4) AS source_similarity
+                 AS source_similarity
         WHERE source_similarity >= $threshold
 
         WITH source_candidate, source_similarity
         ORDER BY source_similarity DESC
         LIMIT 1
 
-        RETURN elementId(source_candidate) as element_id
+        RETURN toString(id(source_candidate)) as element_id
         `;
 
       const params = {
@@ -640,21 +639,20 @@ export class MemoryGraph {
         AND destination_candidate.user_id = $user_id
 
         WITH destination_candidate,
-            round(
-                reduce(dot = 0.0, i IN range(0, size(destination_candidate.embedding)-1) |
+            reduce(dot = 0.0, i IN range(0, size(destination_candidate.embedding)-1) |
                     dot + destination_candidate.embedding[i] * $destination_embedding[i]) /
                 (sqrt(reduce(l2 = 0.0, i IN range(0, size(destination_candidate.embedding)-1) |
                     l2 + destination_candidate.embedding[i] * destination_candidate.embedding[i])) *
                 sqrt(reduce(l2 = 0.0, i IN range(0, size($destination_embedding)-1) |
                     l2 + $destination_embedding[i] * $destination_embedding[i])))
-            , 4) AS destination_similarity
+            AS destination_similarity
         WHERE destination_similarity >= $threshold
 
         WITH destination_candidate, destination_similarity
         ORDER BY destination_similarity DESC
         LIMIT 1
 
-        RETURN elementId(destination_candidate) as element_id
+        RETURN toString(id(destination_candidate)) as element_id
         `;
 
       const params = {

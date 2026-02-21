@@ -17,26 +17,6 @@ The config is defined as an object (or dictionary) with two main keys:
 
 Here's a general example of how to use the config with mem0:
 
-<CodeGroup>
-```python Python
-import os
-from mem0 import Memory
-
-os.environ["OPENAI_API_KEY"] = "sk-xx"
-
-config = {
-    "embedder": {
-        "provider": "your_chosen_provider",
-        "config": {
-            # Provider-specific settings go here
-        }
-    }
-}
-
-m = Memory.from_config(config)
-m.add("Your text here", user_id="user", metadata={"category": "example"})
-```
-
 ```typescript TypeScript
 import { Memory } from 'mem0ai/oss';
 
@@ -54,7 +34,6 @@ const config = {
 const memory = new Memory(config);
 await memory.add("Your text here", { userId: "user", metadata: { category: "example" } });
 ```
-</CodeGroup>
 
 ## Why is Config Needed?
 
@@ -67,32 +46,11 @@ Config is essential for:
 
 Here's a comprehensive list of all parameters that can be used across different embedders:
 
-<Tabs>
-<Tab title="Python">
-| Parameter | Description | Provider |
-|-----------|-------------|----------|
-| `model` | Embedding model to use | All |
-| `api_key` | API key of the provider | All |
-| `embedding_dims` | Dimensions of the embedding model | All |
-| `http_client_proxies` | Allow proxy server settings | All |
-| `ollama_base_url` | Base URL for the Ollama embedding model | Ollama |
-| `model_kwargs` | Key-Value arguments for the Huggingface embedding model | Huggingface |
-| `azure_kwargs` | Key-Value arguments for the AzureOpenAI embedding model | Azure OpenAI |
-| `openai_base_url`    | Base URL for OpenAI API                       | OpenAI            |
-| `vertex_credentials_json` | Path to the Google Cloud credentials JSON file for VertexAI                       | VertexAI            |
-| `memory_add_embedding_type` | The type of embedding to use for the add memory action                       | VertexAI            |
-| `memory_update_embedding_type` | The type of embedding to use for the update memory action                       | VertexAI            |
-| `memory_search_embedding_type` | The type of embedding to use for the search memory action                       | VertexAI            |
-| `lmstudio_base_url` | Base URL for LM Studio API                    | LM Studio         |
-</Tab>
-<Tab title="TypeScript">
 | Parameter | Description | Provider |
 |-----------|-------------|----------|
 | `model` | Embedding model to use | All |
 | `apiKey` | API key of the provider | All |
 | `embeddingDims` | Dimensions of the embedding model | All |
-</Tab>
-</Tabs>
 
 ## Supported Embedding Models
 

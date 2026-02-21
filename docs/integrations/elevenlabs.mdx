@@ -16,7 +16,7 @@ In this guide, we'll build a voice agent that:
 Install necessary libraries:
 
 ```bash
-pip install elevenlabs mem0ai python-dotenv
+npm install mem0ai @elevenlabs/elevenlabs-js
 ```
 
 Configure your environment variables:
@@ -39,53 +39,47 @@ Let's break down the implementation into manageable parts:
 
 First, we import required libraries and set up the environment:
 
-```python
-import os
-import signal
-import sys
-from mem0 import AsyncMemoryClient
-
-from elevenlabs.client import ElevenLabs
-from elevenlabs.conversational_ai.conversation import Conversation
-from elevenlabs.conversational_ai.default_audio_interface import DefaultAudioInterface
-from elevenlabs.conversational_ai.conversation import ClientTools
+```typescript
+import MemoryClient from 'mem0ai';
+import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 ```
 
 These imports provide:
-- Standard Python libraries for system operations and signal handling
-- `AsyncMemoryClient` from Mem0 for memory operations
-- ElevenLabs components for voice interaction
+- `MemoryClient` from Mem0 for memory operations
+- ElevenLabs client for voice interaction
 
 ### 2. Environment Variables and Validation
 
 Next, we validate the required environment variables:
 
-```python
-def main():
-    # Required environment variables
-    AGENT_ID = os.environ.get('AGENT_ID')
-    USER_ID = os.environ.get('USER_ID')
-    API_KEY = os.environ.get('ELEVENLABS_API_KEY')
-    MEM0_API_KEY = os.environ.get('MEM0_API_KEY')
+```typescript
+async function main() {
+  // Required environment variables
+  const AGENT_ID = process.env.AGENT_ID;
+  const USER_ID = process.env.USER_ID;
+  const API_KEY = process.env.ELEVENLABS_API_KEY;
+  const MEM0_API_KEY = process.env.MEM0_API_KEY;
 
-    # Validate required environment variables
-    if not AGENT_ID:
-        sys.stderr.write("AGENT_ID environment variable must be set\n")
-        sys.exit(1)
+  // Validate required environment variables
+  if (!AGENT_ID) {
+    process.stderr.write("AGENT_ID environment variable must be set\n");
+    process.exit(1);
+  }
 
-    if not USER_ID:
-        sys.stderr.write("USER_ID environment variable must be set\n")
-        sys.exit(1)
+  if (!USER_ID) {
+    process.stderr.write("USER_ID environment variable must be set\n");
+    process.exit(1);
+  }
 
-    if not API_KEY:
-        sys.stderr.write("ELEVENLABS_API_KEY not set, assuming the agent is public\n")
+  if (!API_KEY) {
+    process.stderr.write("ELEVENLABS_API_KEY not set, assuming the agent is public\n");
+  }
 
-    if not MEM0_API_KEY:
-        sys.stderr.write("MEM0_API_KEY environment variable must be set\n")
-        sys.exit(1)
-
-    # Set up Mem0 API key in the environment
-    os.environ['MEM0_API_KEY'] = MEM0_API_KEY
+  if (!MEM0_API_KEY) {
+    process.stderr.write("MEM0_API_KEY environment variable must be set\n");
+    process.exit(1);
+  }
+}
 ```
 
 This section:
@@ -98,55 +92,48 @@ This section:
 
 Initialize both the ElevenLabs and Mem0 clients:
 
-```python
-    # Initialize ElevenLabs client
-    client = ElevenLabs(api_key=API_KEY)
+```typescript
+  // Initialize ElevenLabs client
+  const elevenLabsClient = new ElevenLabsClient({ apiKey: API_KEY });
 
-    # Initialize memory client and tools
-    client_tools = ClientTools()
-    mem0_client = AsyncMemoryClient()
+  // Initialize memory client
+  const mem0Client = new MemoryClient({ apiKey: MEM0_API_KEY! });
 ```
 
 Here we:
 - Create an ElevenLabs client with the API key
-- Initialize a ClientTools object for registering function tools
-- Create an AsyncMemoryClient instance for Mem0 interactions
+- Create a `MemoryClient` instance for Mem0 interactions
 
 ### 4. Memory Function Definitions
 
 Define the two key memory functions that will be registered as tools:
 
-```python
-    # Define memory-related functions for the agent
-    async def add_memories(parameters):
-        """Add a message to the memory store"""
-        message = parameters.get("message")
-        await mem0_client.add(
-            messages=message,
-            user_id=USER_ID
-        )
-        return "Memory added successfully"
+```typescript
+  // Define memory-related functions for the agent
+  async function addMemories(parameters: { message: string }) {
+    const message = parameters.message;
+    await mem0Client.add(message, { userId: USER_ID! });
+    return "Memory added successfully";
+  }
 
-    async def retrieve_memories(parameters):
-        """Retrieve relevant memories based on the input message"""
-        message = parameters.get("message")
+  async function retrieveMemories(parameters: { message: string }) {
+    const message = parameters.message;
 
-        # For Platform API, user_id goes in filters
-        filters = {"user_id": USER_ID}
+    // For Platform API, userId goes in filters
+    const filters = { AND: [{ userId: USER_ID! }] };
 
-        # Search for relevant memories using the message as a query
-        results = await mem0_client.search(
-            query=message,
-            filters=filters
-        )
+    // Search for relevant memories using the message as a query
+    const results = await mem0Client.search(message, { filters });
 
-        # Extract and join the memory texts
-        memories = ' '.join([result["memory"] for result in results.get('results', [])])
-        print("[ Memories ]", memories)
+    // Extract and join the memory texts
+    const memories = (results['results'] || []).map((r: any) => r['memory']).join(' ');
+    console.log('[ Memories ]', memories);
 
-        if memories:
-            return memories
-        return "No memories found"
+    if (memories) {
+      return memories;
+    }
+    return "No memories found";
+  }
 ```
 
 These functions:
@@ -169,35 +156,31 @@ These functions:
 
 Register the memory functions with the ElevenLabs ClientTools system:
 
-```python
-    # Register the memory functions as tools for the agent
-    client_tools.register("addMemories", add_memories, is_async=True)
-    client_tools.register("retrieveMemories", retrieve_memories, is_async=True)
+```typescript
+  // Register the memory functions as tools for the agent
+  clientTools.register("addMemories", addMemories);
+  clientTools.register("retrieveMemories", retrieveMemories);
 ```
 
 This allows the ElevenLabs agent to:
 - Access these functions through function calling
-- Wait for asynchronous results (is_async=True)
 - Call these functions by name ("addMemories" and "retrieveMemories")
 
 ### 6. Conversation Setup
 
 Configure the conversation with ElevenLabs:
 
-```python
-    # Initialize the conversation
-    conversation = Conversation(
-        client,
-        AGENT_ID,
-        # Assume auth is required when API_KEY is set
-        requires_auth=bool(API_KEY),
-        audio_interface=DefaultAudioInterface(),
-        client_tools=client_tools,
-        callback_agent_response=lambda response: print(f"Agent: {response}"),
-        callback_agent_response_correction=lambda original, corrected: print(f"Agent: {original} -> {corrected}"),
-        callback_user_transcript=lambda transcript: print(f"User: {transcript}"),
-        # callback_latency_measurement=lambda latency: print(f"Latency: {latency}ms"),
-    )
+```typescript
+  // Initialize the conversation
+  const conversation = new Conversation(elevenLabsClient, AGENT_ID!, {
+    // Assume auth is required when API_KEY is set
+    requiresAuth: Boolean(API_KEY),
+    clientTools,
+    onAgentResponse: (response: string) => console.log(`Agent: ${response}`),
+    onAgentResponseCorrection: (original: string, corrected: string) => console.log(`Agent: ${original} -> ${corrected}`),
+    onUserTranscript: (transcript: string) => console.log(`User: ${transcript}`),
+    // onLatencyMeasurement: (latency: number) => console.log(`Latency: ${latency}ms`),
+  });
 ```
 
 This sets up the conversation with:
@@ -215,21 +198,20 @@ This sets up the conversation with:
 
 Start and manage the conversation:
 
-```python
-    # Start the conversation
-    print(f"Starting conversation with user_id: {USER_ID}")
-    conversation.start_session()
+```typescript
+  // Start the conversation
+  console.log(`Starting conversation with userId: ${USER_ID}`);
+  await conversation.startSession();
 
-    # Handle Ctrl+C to gracefully end the session
-    signal.signal(signal.SIGINT, lambda sig, frame: conversation.end_session())
+  // Handle Ctrl+C to gracefully end the session
+  process.on('SIGINT', () => conversation.endSession());
 
-    # Wait for the conversation to end and get the conversation ID
-    conversation_id = conversation.wait_for_session_end()
-    print(f"Conversation ID: {conversation_id}")
+  // Wait for the conversation to end and get the conversation ID
+  const conversationId = await conversation.waitForSessionEnd();
+  console.log(`Conversation ID: ${conversationId}`);
+}
 
-
-if __name__ == '__main__':
-    main()
+main().catch(console.error);
 ```
 
 This final section:
@@ -359,10 +341,10 @@ Here's how a typical conversation with memory might flow:
 1. **User speaks**: "Hi, do you remember my favorite color?"
 
 2. **Agent retrieves memories**:
-   ```python
-   # Agent calls retrieve_memories
-   memories = retrieve_memories({"message": "user's favorite color"})
-   # If found: "The user's favorite color is blue"
+   ```typescript
+   // Agent calls retrieveMemories
+   const memories = await retrieveMemories({ message: "user's favorite color" });
+   // If found: "The user's favorite color is blue"
    ```
 
 3. **Agent processes with context**:
@@ -376,9 +358,9 @@ Here's how a typical conversation with memory might flow:
 5. **User responds**: "It's actually green."
 
 6. **Agent stores new information**:
-   ```python
-   # Agent calls add_memories
-   add_memories({"message": "The user's favorite color is green"})
+   ```typescript
+   // Agent calls addMemories
+   await addMemories({ message: "The user's favorite color is green" });
    ```
 
 7. **Agent confirms**: "Thanks, I'll remember that your favorite color is green."

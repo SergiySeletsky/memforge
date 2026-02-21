@@ -2,36 +2,7 @@
 
 ### Usage
 
-<CodeGroup>
-```python Python
-import os
-from mem0 import Memory
-
-os.environ["OPENAI_API_KEY"] = "sk-xx"
-
-config = {
-    "vector_store": {
-        "provider": "pgvector",
-        "config": {
-            "user": "test",
-            "password": "123",
-            "host": "127.0.0.1",
-            "port": "5432",
-        }
-    }
-}
-
-m = Memory.from_config(config)
-messages = [
-    {"role": "user", "content": "I'm planning to watch a movie tonight. Any recommendations?"},
-    {"role": "assistant", "content": "How about thriller movies? They can be quite engaging."},
-    {"role": "user", "content": "I'm not a big fan of thriller movies but I love sci-fi movies."},
-    {"role": "assistant", "content": "Got it! I'll avoid thriller recommendations and suggest sci-fi movies in the future."}
-]
-m.add(messages, user_id="alice", metadata={"category": "movies"})
-```
-
-```typescript TypeScript
+```typescript
 import { Memory } from 'mem0ai/oss';
 
 const config = {
@@ -60,7 +31,6 @@ const messages = [
 ]
 await memory.add(messages, { userId: "alice", metadata: { category: "movies" } });
 ```
-</CodeGroup>
 
 ### Config
 
@@ -69,19 +39,17 @@ Here are the parameters available for configuring pgvector:
 | Parameter | Description | Default Value |
 | --- | --- | --- |
 | `dbname` | The name of the database | `postgres` |
-| `collection_name` | The name of the collection | `mem0` |
-| `embedding_model_dims` | Dimensions of the embedding model | `1536` |
+| `collectionName` | The name of the collection | `mem0` |
+| `embeddingModelDims` | Dimensions of the embedding model | `1536` |
 | `user` | User name to connect to the database | `None` |
 | `password` | Password to connect to the database | `None` |
 | `host` | The host where the Postgres server is running | `None` |
 | `port` | The port where the Postgres server is running | `None` |
-| `diskann` | Whether to use diskann for vector similarity search (requires pgvectorscale) | `True` |
-| `hnsw` | Whether to use hnsw for vector similarity search | `False` |
+| `diskann` | Whether to use diskann for vector similarity search (requires pgvectorscale) | `false` |
+| `hnsw` | Whether to use hnsw for vector similarity search | `false` |
 | `sslmode` | SSL mode for PostgreSQL connection (e.g., 'require', 'prefer', 'disable') | `None` |
-| `connection_string` | PostgreSQL connection string (overrides individual connection parameters) | `None` |
-| `connection_pool` | psycopg2 connection pool object (overrides connection string and individual parameters) | `None` |
+| `connectionString` | PostgreSQL connection string (overrides individual connection parameters) | `None` |
 
 **Note**: The connection parameters have the following priority:
-1. `connection_pool` (highest priority)
-2. `connection_string`
-3. Individual connection parameters (`user`, `password`, `host`, `port`, `sslmode`)
+1. `connectionString`
+2. Individual connection parameters (`user`, `password`, `host`, `port`, `sslmode`)

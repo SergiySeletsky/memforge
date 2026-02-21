@@ -69,17 +69,29 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
           };
         }
 
-        const response = await memoryClient.add(text, {
+        // Wrap add() with a 45-second timeout — graph entity extraction via Azure LLM
+        // can take 10-30s; without a timeout the tool hangs indefinitely.
+        const ADD_TIMEOUT_MS = 45_000;
+        const t0 = Date.now();
+        console.log(`[MCP] add_memories start for userId=${userId} text.length=${text.length}`);
+        const addPromise = memoryClient.add(text, {
           userId,
           metadata: { source_app: "openmemory", mcp_client: clientName },
         });
+        const addTimeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`add_memories timed out after ${ADD_TIMEOUT_MS / 1000}s`)), ADD_TIMEOUT_MS)
+        );
+        const response = await Promise.race([addPromise, addTimeoutPromise]);
+        console.log(`[MCP] add_memories done in ${Date.now() - t0}ms`);
 
         if (response && typeof response === "object" && "results" in response) {
           for (const result of (response as any).results) {
-            const memoryId = result.id;
+            const memoryId = result.id as string;
+            // SDK puts event in metadata.event; handle both locations gracefully
+            const event: string = result.event ?? result.metadata?.event ?? "";
             const existing = db.select().from(memories).where(eq(memories.id, memoryId)).get();
 
-            if (result.event === "ADD") {
+            if (event === "ADD") {
               if (!existing) {
                 db.insert(memories)
                   .values({
@@ -92,7 +104,7 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
                   .run();
               } else {
                 db.update(memories)
-                  .set({ state: "active" as MemoryState, content: result.memory })
+                  .set({ state: "active" as MemoryState, content: result.memory, updatedAt: new Date().toISOString() })
                   .where(eq(memories.id, memoryId))
                   .run();
               }
@@ -104,7 +116,14 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
                   newState: "active" as MemoryState,
                 })
                 .run();
-            } else if (result.event === "DELETE") {
+            } else if (event === "UPDATE") {
+              if (existing) {
+                db.update(memories)
+                  .set({ content: result.memory, updatedAt: new Date().toISOString() })
+                  .where(eq(memories.id, memoryId))
+                  .run();
+              }
+            } else if (event === "DELETE") {
               if (existing) {
                 db.update(memories)
                   .set({ state: "deleted" as MemoryState, deletedAt: new Date().toISOString() })
@@ -165,33 +184,53 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
             .map((m) => m.id)
         );
 
-        // Search vector store
-        const searchResults = await memoryClient.search(query, { userId });
-        const results: any[] = [];
+        // Search with a 30-second timeout — embedding (~2s) + vector search (~0.1s) run
+        // in parallel with graph LLM entity extraction (~10-15s) since SDK patch.
+        const SEARCH_TIMEOUT_MS = 30_000;
+        const t0search = Date.now();
+        console.log(`[MCP] search_memory start for userId=${userId} query="${query}"`);
+        const searchPromise = memoryClient.search(query, { userId });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`search_memory timed out after ${SEARCH_TIMEOUT_MS / 1000}s`)), SEARCH_TIMEOUT_MS)
+        );
+        const searchResults: any = await Promise.race([searchPromise, timeoutPromise]);
+        console.log(`[MCP] search_memory done in ${Date.now() - t0search}ms`);
 
-        if (Array.isArray(searchResults)) {
-          for (const h of searchResults) {
-            if (!h.id || !accessibleIds.has(h.id)) continue;
-            results.push({
-              id: h.id,
-              memory: h.memory || h.payload?.data,
-              score: h.score,
-              created_at: h.created_at || h.payload?.created_at,
-              updated_at: h.updated_at || h.payload?.updated_at,
-            });
-            // Log access
-            db.insert(memoryAccessLogs)
-              .values({
-                memoryId: h.id,
-                appId: app.id,
-                accessType: "search",
-                metadata: { query, score: h.score },
-              })
-              .run();
-          }
+        // SDK returns { results: MemoryItem[], relations?: GraphEntry[] }
+        const rawHits: any[] = Array.isArray(searchResults)
+          ? searchResults
+          : (searchResults?.results ?? []);
+        const graphRelations: any[] = searchResults?.relations ?? [];
+
+        const results: any[] = [];
+        for (const h of rawHits) {
+          if (!h.id || !accessibleIds.has(h.id)) continue;
+          results.push({
+            id: h.id,
+            memory: h.memory || h.payload?.data,
+            score: h.score,
+            created_at: h.createdAt || h.created_at,
+            updated_at: h.updatedAt || h.updated_at,
+          });
+          db.insert(memoryAccessLogs)
+            .values({
+              memoryId: h.id,
+              appId: app.id,
+              accessType: "search",
+              metadata: { query, score: h.score },
+            })
+            .run();
         }
 
-        return { content: [{ type: "text", text: JSON.stringify({ results }, null, 2) }] };
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(
+              graphRelations.length > 0 ? { results, relations: graphRelations } : { results },
+              null, 2
+            ),
+          }],
+        };
       } catch (e: any) {
         console.error("Error searching memory:", e);
         return { content: [{ type: "text", text: `Error searching memory: ${e.message}` }] };
@@ -218,7 +257,16 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
         const db = getDb();
         const { user, app } = getUserAndApp(userId, clientName);
 
-        const allMemories = await memoryClient.getAll({ userId });
+        // Wrap getAll() with a 30-second timeout just in case vector store is slow.
+        const GET_ALL_TIMEOUT_MS = 30_000;
+        const t0list = Date.now();
+        console.log(`[MCP] list_memories start for userId=${userId}`);
+        const getAllPromise = memoryClient.getAll({ userId });
+        const getAllTimeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`list_memories timed out after ${GET_ALL_TIMEOUT_MS / 1000}s`)), GET_ALL_TIMEOUT_MS)
+        );
+        const allMemories = await Promise.race([getAllPromise, getAllTimeoutPromise]);
+        console.log(`[MCP] list_memories SDK done in ${Date.now() - t0list}ms`);
         const userMems = db.select().from(memories).where(eq(memories.userId, user.id)).all();
         const accessibleIds = new Set(
           userMems
