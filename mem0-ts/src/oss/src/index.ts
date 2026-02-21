@@ -24,6 +24,7 @@ export * from "./llms/lmstudio";
 export * from "./vector_stores/base";
 export * from "./vector_stores/memory";
 export * from "./vector_stores/memgraph";
+export * from "./vector_stores/kuzu";
 export * from "./reranker/base";
 export * from "./reranker/llm";
 export * from "./reranker/cohere";

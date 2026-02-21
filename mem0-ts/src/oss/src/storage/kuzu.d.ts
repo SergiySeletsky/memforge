@@ -25,7 +25,8 @@ declare module "kuzu" {
   }
 
   class QueryResult {
-    getAll(): Record<string, unknown>[];
+    /** Returns a Promise — despite the sync-looking signature, KuzuDB 0.9 resolves asynchronously. */
+    getAll(): Promise<Record<string, unknown>[]>;
     close(): void;
   }
 }

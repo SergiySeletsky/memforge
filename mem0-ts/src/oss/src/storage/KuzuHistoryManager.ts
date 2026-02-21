@@ -88,7 +88,7 @@ export class KuzuHistoryManager implements HistoryManager {
        LIMIT 100`,
     );
     const result = await this.conn.execute(stmt, { memory_id: memoryId });
-    return result.getAll();
+    return await result.getAll();
   }
 
   async reset(): Promise<void> {

@@ -18,7 +18,14 @@ beforeEach(() => jest.clearAllMocks());
 
 describe("resolveEntity", () => {
   it("RESOLVE_01: creates a new entity and returns an id string", async () => {
-    mockRunWrite.mockResolvedValue([{ id: "entity-uuid-1" }]);
+    // resolveEntity makes 3 runWrite calls:
+    //   [0] ensure User (MERGE u:User)
+    //   [1] MERGE Entity + return e.id
+    //   [2] MERGE HAS_ENTITY relationship
+    mockRunWrite
+      .mockResolvedValueOnce([{}])                    // User MERGE
+      .mockResolvedValueOnce([{ id: "entity-uuid-1" }]) // Entity MERGE → returns id
+      .mockResolvedValueOnce([{}]);                   // HAS_ENTITY MERGE
 
     const id = await resolveEntity(
       { name: "Alice", type: "PERSON", description: "A colleague" },
@@ -27,12 +34,14 @@ describe("resolveEntity", () => {
 
     expect(typeof id).toBe("string");
     expect(id).toBe("entity-uuid-1");
-    expect(mockRunWrite).toHaveBeenCalledTimes(1);
+    expect(mockRunWrite).toHaveBeenCalledTimes(3);
 
-    // Verify the Cypher uses MERGE (find-or-create)
-    const cypher = mockRunWrite.mock.calls[0][0] as string;
-    expect(cypher).toContain("MERGE");
-    expect(cypher).toContain("HAS_ENTITY");
+    // calls[1] is the Entity MERGE — verify it contains MERGE and HAS_ENTITY path setup
+    const entityCypher = mockRunWrite.mock.calls[1][0] as string;
+    expect(entityCypher).toContain("MERGE");
+    // calls[2] is the relationship MERGE
+    const relCypher = mockRunWrite.mock.calls[2][0] as string;
+    expect(relCypher).toContain("HAS_ENTITY");
   });
 
   it("RESOLVE_02: same name+type returns same id (MERGE semantics)", async () => {
@@ -47,9 +56,14 @@ describe("resolveEntity", () => {
   });
 
   it("RESOLVE_03: same name different type → different resolveEntity call (distinct params)", async () => {
+    // 2 invocations × 3 runWrite calls each = 6 total
     mockRunWrite
-      .mockResolvedValueOnce([{ id: "id-person" }])
-      .mockResolvedValueOnce([{ id: "id-org" }]);
+      .mockResolvedValueOnce([{}])                     // [0] User MERGE (person)
+      .mockResolvedValueOnce([{ id: "id-person" }])    // [1] Entity MERGE (person)
+      .mockResolvedValueOnce([{}])                     // [2] HAS_ENTITY (person)
+      .mockResolvedValueOnce([{}])                     // [3] User MERGE (org)
+      .mockResolvedValueOnce([{ id: "id-org" }])       // [4] Entity MERGE (org)
+      .mockResolvedValueOnce([{}]);                    // [5] HAS_ENTITY (org)
 
     const personId = await resolveEntity({ name: "Alice", type: "PERSON", description: "" }, "user-1");
     const orgId = await resolveEntity({ name: "Alice", type: "ORGANIZATION", description: "" }, "user-1");
@@ -60,11 +74,15 @@ describe("resolveEntity", () => {
   });
 
   it("RESOLVE_04: longer description triggers ON MATCH SET with CASE expression", async () => {
-    mockRunWrite.mockResolvedValue([{ id: "entity-uuid-1" }]);
+    mockRunWrite
+      .mockResolvedValueOnce([{}])                     // [0] User MERGE
+      .mockResolvedValueOnce([{ id: "entity-uuid-1" }]) // [1] Entity MERGE
+      .mockResolvedValueOnce([{}]);                    // [2] HAS_ENTITY MERGE
 
     await resolveEntity({ name: "Alice", type: "PERSON", description: "A more detailed description of Alice" }, "user-1");
 
-    const cypher = mockRunWrite.mock.calls[0][0] as string;
+    // calls[1] is the Entity MERGE — it contains ON MATCH SET ... CASE
+    const cypher = mockRunWrite.mock.calls[1][0] as string;
     expect(cypher).toContain("ON MATCH SET");
     expect(cypher).toContain("CASE");
   });

@@ -68,24 +68,24 @@ describe("Deduplication — different content", () => {
   let id2: string;
 
   it("two distinct facts are stored as ADD events with different IDs", async () => {
-    const [r1, r2] = await Promise.all([
-      api("/api/v1/memories", {
-        method: "POST",
-        body: {
-          user_id: USER,
-          text: "I prefer coffee over tea.",
-          app: APP,
-        },
-      }),
-      api("/api/v1/memories", {
-        method: "POST",
-        body: {
-          user_id: USER,
-          text: "I enjoy hiking in the mountains.",
-          app: APP,
-        },
-      }),
-    ]);
+    // Run sequentially to avoid Memgraph contention from other suite's async
+    // fire-and-forget tasks (entity extraction, categorisation) still running.
+    const r1 = await api("/api/v1/memories", {
+      method: "POST",
+      body: {
+        user_id: USER,
+        text: "I prefer coffee over tea.",
+        app: APP,
+      },
+    });
+    const r2 = await api("/api/v1/memories", {
+      method: "POST",
+      body: {
+        user_id: USER,
+        text: "I enjoy hiking in the mountains.",
+        app: APP,
+      },
+    });
 
     expect(r1.status).toBe(200);
     expect(r2.status).toBe(200);

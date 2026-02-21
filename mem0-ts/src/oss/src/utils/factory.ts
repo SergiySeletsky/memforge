@@ -7,6 +7,7 @@ import { GroqLLM } from "../llms/groq";
 import { MistralLLM } from "../llms/mistral";
 import { MemoryVectorStore } from "../vector_stores/memory";
 import { MemgraphVectorStore } from "../vector_stores/memgraph";
+import { KuzuVectorStore } from "../vector_stores/kuzu";
 import {
   EmbeddingConfig,
   HistoryStoreConfig,
@@ -115,6 +116,8 @@ export class VectorStoreFactory {
         return new MemoryVectorStore(config);
       case "memgraph":
         return new MemgraphVectorStore(config as any);
+      case "kuzu":
+        return new KuzuVectorStore(config as any);
       default:
         throw new Error(`Unsupported vector store provider: ${provider}`);
     }

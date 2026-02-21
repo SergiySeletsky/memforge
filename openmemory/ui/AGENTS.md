@@ -84,3 +84,177 @@ The `pnpm.onlyBuiltDependencies` field only takes effect at the **workspace root
 
 - `tests/unit/entities/resolve.test.ts`: 3 failing unit tests — pre-existing, do not fix
 - `app/api/v1/entities/[entityId]/route.ts`: TS2344 error on route params type — pre-existing Next.js 15 known issue, tracked upstream
+
+---
+
+## Session 2 — KuzuVectorStore Implementation & Benchmark
+
+### Objective
+
+Implement `KuzuVectorStore` for fully in-process/embedded vector storage (previously only `KuzuHistoryManager` existed), and benchmark KuzuDB vs Memgraph for insert + search latency.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `mem0-ts/src/oss/src/vector_stores/kuzu.ts` | **NEW** — `KuzuVectorStore` full implementation |
+| `mem0-ts/src/oss/src/storage/kuzu.d.ts` | Fixed `getAll()` return type: `Promise<...>` (was incorrectly sync) |
+| `mem0-ts/src/oss/src/storage/KuzuHistoryManager.ts` | Added `await` to `result.getAll()` (was missing) |
+| `mem0-ts/src/oss/src/vector_stores/memgraph.ts` | Fixed `init()` DDL and `search()` `k` integer type |
+| `mem0-ts/src/oss/src/utils/factory.ts` | Added `KuzuVectorStore` import + `"kuzu"` case |
+| `mem0-ts/src/oss/src/index.ts` | Added `export * from "./vector_stores/kuzu"` |
+| `mem0-ts/bench/benchmark.cjs` | Pure CJS comparative benchmark |
+
+### KuzuDB 0.9.0 Critical Quirks (from runtime probing)
+
+1. **`getAll()` is async** — `.d.ts` stub says sync; actual runtime returns `Promise<...>`. Always `await result.getAll()`.
+2. **`FLOAT[n]` ≠ `FLOAT[]`** — `FLOAT[n]` is ARRAY type; `FLOAT[]` is LIST type. `array_cosine_similarity` requires both args to be LIST — use `FLOAT[]` in DDL.
+3. **Parameterized query vector `$q` is rejected** — Memgraph-like `$q` params fail: "ARRAY_COSINE_SIMILARITY requires argument type to be FLOAT[] or DOUBLE[]" because KuzuDB can't infer type of JS array param as FLOAT[] LIST. Must inline the vector as float literals.
+4. **`toInteger()` doesn't exist in KuzuDB Cypher** — parameterized LIMIT works fine though.
+
+### KuzuVectorStore Implementation Pattern
+
+```typescript
+// DDL: FLOAT[] (LIST), not FLOAT[n] (ARRAY)
+`CREATE NODE TABLE IF NOT EXISTS MemVector (
+   id      STRING, vec  FLOAT[], payload STRING, PRIMARY KEY (id)
+)`
+
+// vecLiteral helper — required; $q param is rejected by similarity functions
+private vecLiteral(v: number[]): string {
+  return "[" + v.map((x) => x.toFixed(8)).join(",") + "]";
+}
+
+// search: MUST use conn.query() with inline literal, NOT prepared statement
+const vecLit = this.vecLiteral(query);
+const result = await this.conn.query(
+  `MATCH (v:MemVector)
+   WITH v, array_cosine_similarity(v.vec, ${vecLit}) AS score
+   ORDER BY score DESC LIMIT ${fetchLimit}
+   RETURN v.id AS id, v.payload AS payload, score`
+);
+const rows = await result.getAll();  // getAll() is async — must await
+```
+
+### Memgraph Fixes
+
+- **Vector index DDL syntax**: `CREATE VECTOR INDEX name ON :Label(prop) WITH CONFIG {"dimension": N, "capacity": 100000, "metric": "cos"}` (NOT `OPTIONS {size:}`)
+- **`k` must be explicit integer**: pass `neo4j.int(k)` to `vector_search.search()` — JS number fails with "must be of type INTEGER"
+
+### Benchmark Results (dim=128, 200 inserts, 20×10 batch, 200 searches, k=10)
+
+| Operation | KuzuDB (in-process) | Memgraph (TCP bolt, HNSW) | Winner |
+|-----------|---------------------|---------------------------|--------|
+| insert single mean | 0.47 ms | 0.88 ms | KuzuDB 1.9× |
+| insert single p95 | 0.64 ms | 1.12 ms | KuzuDB |
+| insert batch/10 mean | 0.45 ms | 0.92 ms | KuzuDB 2.0× |
+| search k=10 mean | 5.47 ms | **0.86 ms** | **Memgraph 6.4×** |
+| search k=10 p95 | 6.43 ms | 1.15 ms | Memgraph |
+| search ops/s | 183 | 1165 | Memgraph |
+
+**Key takeaways:**
+- KuzuDB inserts are ~2× faster (no TCP roundtrip — in-process)
+- Memgraph search is **6.4× faster** because it uses HNSW index (sub-linear), KuzuDB does brute-force linear scan
+- As collection size grows, KuzuDB search degrades linearly while Memgraph HNSW stays O(log n)
+- Use KuzuDB for small (< 10K vectors) fully-offline scenarios; use Memgraph for production/large collections
+
+### Verification
+
+- `pnpm exec tsc --noEmit`: **0 errors**
+- KuzuDB benchmark ran successfully (dim=128, all three phases complete)
+- Memgraph benchmark ran successfully (confirmed MAGE available in Docker container `loving_jennings`)
+
+### Usage (KuzuVectorStore)
+
+```typescript
+const memory = new Memory({
+  vectorStore: {
+    provider: "kuzu",
+    config: { dbPath: "./my_vectors", dimension: 1536, metric: "cos" },
+  },
+  historyStore: {
+    provider: "kuzu",
+    config: { dbPath: "./my_history" },
+  },
+});
+```
+
+---
+
+## Session 3 — Full Pipeline Benchmark (add + search + graph)
+
+### Objective
+
+Benchmark the full `Memory.add()` + `Memory.search()` pipeline with both storage backends — not just raw vector ops but including the dedup search, the actual vector writes, and the history/graph writes. Also fixed a correctness bug in `KuzuVectorStore` where userId filtering was post-processed in JS over a full table scan.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `mem0-ts/bench/full-pipeline.cjs` | **NEW** — full pipeline benchmark (mock embed + mock LLM) |
+| `mem0-ts/src/oss/src/vector_stores/kuzu.ts` | Added `user_id` column + Cypher pre-filter for multi-user correctness/perf |
+
+### Full Pipeline Architecture (what `Memory.add()` actually does)
+
+```
+add():
+  1. embed input          ← OpenAI ~80ms   (MOCKED in benchmark)
+  2. llm.extractFacts     ← OpenAI ~600ms  (MOCKED)
+  3. for each fact:
+     a. embed fact        ← OpenAI ~80ms   (MOCKED)
+     b. vectorSearch      ← REAL (dedup lookup, ×2 for 2 facts)
+  4. llm.updateDecision   ← OpenAI ~600ms  (MOCKED)
+  5. for each ADD/UPDATE action:
+     a. vectorInsert      ← REAL
+     b. historyWrite      ← REAL (graph write)
+
+search():
+  1. embed query          ← OpenAI ~80ms   (MOCKED)
+  2. vectorSearch         ← REAL
+```
+
+### Full Pipeline Benchmark Results (dim=128, 150 adds, 150 searches, k=10)
+
+**add() phase breakdown:**
+
+| Phase | KuzuDB p50 | Memgraph p50 | Winner |
+|-------|-----------|--------------|--------|
+| vectorSearch (dedup ×2) | 8.89 ms | 2.34 ms | Memgraph **3.8×** |
+| vectorInsert (per action) | 2.10 ms | 2.22 ms | KuzuDB **1.1×** ≈ tie |
+| historyWrite (graph) | 1.52 ms | 1.82 ms | KuzuDB **1.2×** ≈ tie |
+| **total add() [storage]** | **13.15 ms** | **8.44 ms** | **Memgraph 1.6×** |
+
+**search() (storage only):**
+
+| | KuzuDB | Memgraph | Winner |
+|--|--------|----------|--------|
+| p50 | 5.44 ms | 1.20 ms | Memgraph **4.5×** |
+| p95 | 16.19 ms | 2.22 ms | Memgraph **7.3×** |
+
+**Real-world projection (with actual OpenAI):**
+- OpenAI subtotal: ~80ms embed + ~600ms extractFacts + ~600ms updateDecision = **~1,280ms**
+- Total add() p50: KuzuDB ~1,293ms vs Memgraph ~1,288ms → **<1% difference**
+- OpenAI dominates storage → backend choice doesn't change total add() latency significantly
+- Total search() p50: KuzuDB ~85ms vs Memgraph ~81ms → 5% difference (embed dominates both)
+
+**Key takeaway:** The biggest raw difference is in vectorSearch during dedup (Memgraph HNSW vs KuzuDB brute-force). With OpenAI in the loop, this difference becomes insignificant. **Choose backend for operational reasons** (persistence, graph queries, scalability) not raw latency.
+
+### KuzuVectorStore Bug Fixed: userId pre-filtering
+
+**Problem:** `KuzuVectorStore.search()` was doing a full table scan over ALL vectors (all users), then post-filtering in JS. On a multi-user collection this means:
+- Results could be wrong (wrong user's vectors could dominate the top-k before filtering)  
+- Performance degrades O(total_vectors), not O(vectors_for_this_user)
+
+**Fix:** Added dedicated `user_id STRING` column to `MemVector` table. Cypher WHERE pre-filter runs before cosine computation:
+```cypher
+MATCH (v:MemVector)
+WHERE v.user_id = 'alice'     -- ← now a real column, not JSON parse
+WITH v, array_cosine_similarity(v.vec, [...]) AS score
+ORDER BY score DESC LIMIT 10
+```
+Note: `JSON_EXTRACT()` doesn't exist in KuzuDB 0.9 (requires separate JSON extension install).
+
+### KuzuDB quirk added: JSON_EXTRACT unavailable
+
+Add to the existing KuzuDB quirks list:
+5. `JSON_EXTRACT()` requires the JSON extension (`INSTALL JSON; LOAD EXTENSION JSON;`) — NOT available by default. Store filterable fields as dedicated columns instead.

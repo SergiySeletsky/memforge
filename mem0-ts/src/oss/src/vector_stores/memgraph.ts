@@ -46,11 +46,12 @@ export class MemgraphVectorStore implements VectorStore {
   private async init(): Promise<void> {
     await this.withSession((s) =>
       s.run(
-        `CREATE VECTOR INDEX $idx ON :MemVector(embedding)
-         OPTIONS {size: $size, metric: $metric}`,
-        { idx: this.indexName, size: this.dimension, metric: this.metric },
-      ).catch(() => {
-        // Index may already exist — not an error
+        `CREATE VECTOR INDEX ${this.indexName} ON :MemVector(embedding)
+         WITH CONFIG {"dimension": ${this.dimension}, "capacity": 100000, "metric": "${this.metric}"}`,
+      ).catch((e: Error) => {
+        // Swallow only "index already exists" — a benign race condition on startup.
+        // All other errors (auth, schema mismatch, network) must propagate.
+        if (!/already exists/i.test(e.message)) throw e;
       }),
     );
   }
@@ -65,50 +66,60 @@ export class MemgraphVectorStore implements VectorStore {
     payloads: Record<string, any>[],
   ): Promise<void> {
     await this.initialized;
-    await this.withSession(async (s) => {
-      for (let i = 0; i < vectors.length; i++) {
-        await s.run(
-          `MERGE (v:MemVector {id: $id})
-           SET v.embedding = $embedding,
-               v.payload   = $payload`,
-          {
-            id: ids[i],
-            embedding: vectors[i],
-            payload: JSON.stringify(payloads[i]),
-          },
-        );
-      }
-    });
+    // Build row objects and use UNWIND so the entire batch is one round-trip
+    // instead of N sequential queries (inspired by graphiti's Neo4j save_bulk).
+    // user_id is stored as a dedicated node property to enable Cypher-side
+    // pre-filtering in search() without scanning every user's vectors.
+    const rows = vectors.map((embedding, i) => ({
+      id: ids[i],
+      user_id: (payloads[i].userId as string) ?? "",
+      embedding,
+      payload: JSON.stringify(payloads[i]),
+    }));
+    await this.withSession((s) =>
+      s.run(
+        `UNWIND $rows AS row
+         MERGE (v:MemVector {id: row.id})
+         SET v.user_id   = row.user_id,
+             v.embedding = row.embedding,
+             v.payload   = row.payload`,
+        { rows },
+      ),
+    );
   }
 
   async search(
     query: number[],
     limit: number = 10,
     filters?: SearchFilters,
+    /** Minimum similarity score threshold (0–1). Results below this are dropped. */
+    minScore: number = 0,
   ): Promise<VectorStoreResult[]> {
     await this.initialized;
+    // Pass userId as a Cypher parameter so Memgraph filters nodes before returning
+    // them to JS. Empty string means "no user filter" (matches all nodes).
+    // This mirrors graphiti's WHERE score > $min_score pattern: keep filtering
+    // logic inside the query rather than purely in JS.
+    const uid = this.userId;
     return this.withSession(async (s) => {
-      // Use Memgraph MAGE vector_search module
+      // CALL vector_search.search() returns top-k by cosine similarity.
+      // The WHERE clause after YIELD is standard Cypher supported by Memgraph
+      // and pre-filters by user_id before results reach JS.
       const result = await s.run(
         `CALL vector_search.search($idx, $k, $query) YIELD node, similarity
-         RETURN node, similarity`,
-        { idx: this.indexName, k: limit * 4, query },
+         WHERE $uid = '' OR node.user_id = $uid
+         RETURN node.id AS id, node.payload AS payload, similarity AS score`,
+        { idx: this.indexName, k: neo4j.int(limit * 4), query, uid },
       );
 
-      const rows: VectorStoreResult[] = result.records
-        .map((r) => {
-          const node = r.get("node").properties;
-          const payload = JSON.parse(node.payload as string);
-          return {
-            id: node.id as string,
-            payload,
-            score: r.get("similarity") as number,
-          };
-        })
-        .filter((r) => this.matchesFilters(r.payload, filters))
+      return result.records
+        .map((r) => ({
+          id: r.get("id") as string,
+          payload: JSON.parse(r.get("payload") as string),
+          score: r.get("score") as number,
+        }))
+        .filter((r) => r.score >= minScore && this.matchesFilters(r.payload, filters))
         .slice(0, limit);
-
-      return rows;
     });
   }
 
@@ -131,14 +142,26 @@ export class MemgraphVectorStore implements VectorStore {
     payload: Record<string, any>,
   ): Promise<void> {
     await this.initialized;
-    await this.withSession((s) =>
-      s.run(
-        `MATCH (v:MemVector {id: $id})
-         SET v.payload = $payload
-         ${vector ? ", v.embedding = $embedding" : ""}`,
-        { id: vectorId, payload: JSON.stringify(payload), embedding: vector },
-      ),
-    );
+    // Use two separate prepared statements rather than Cypher string interpolation.
+    // This avoids injecting conditional fragments into the query template and keeps
+    // each prepared statement self-contained (inspired by graphiti's Neo4j patterns).
+    const uid = (payload.userId as string) ?? "";
+    const serialised = JSON.stringify(payload);
+    await this.withSession(async (s) => {
+      if (vector !== null) {
+        await s.run(
+          `MATCH (v:MemVector {id: $id})
+           SET v.user_id = $uid, v.embedding = $embedding, v.payload = $payload`,
+          { id: vectorId, uid, embedding: vector, payload: serialised },
+        );
+      } else {
+        await s.run(
+          `MATCH (v:MemVector {id: $id})
+           SET v.user_id = $uid, v.payload = $payload`,
+          { id: vectorId, uid, payload: serialised },
+        );
+      }
+    });
   }
 
   async delete(vectorId: string): Promise<void> {
@@ -153,14 +176,21 @@ export class MemgraphVectorStore implements VectorStore {
     await this.withSession((s) => s.run("MATCH (v:MemVector) DETACH DELETE v"));
   }
 
+  async healthCheck(): Promise<void> {
+    // Mirrors graphiti's health_check() → verify_connectivity() pattern.
+    await this.driver.verifyConnectivity();
+  }
+
   async list(
     filters?: SearchFilters,
     limit: number = 100,
   ): Promise<[VectorStoreResult[], number]> {
     await this.initialized;
     return this.withSession(async (s) => {
+      // neo4j.int() ensures the driver sends an integer type — plain JS numbers
+      // are treated as floats by the bolt protocol which Memgraph rejects for LIMIT.
       const result = await s.run("MATCH (v:MemVector) RETURN v LIMIT $limit", {
-        limit,
+        limit: neo4j.int(limit),
       });
       const all: VectorStoreResult[] = result.records
         .map((r) => {
