@@ -29,6 +29,17 @@ import { Reranker } from "../reranker/base";
 import { ConfigManager } from "../config/manager";
 import { MemoryGraph } from "./graph_memory";
 import {
+  GraphStore,
+  GraphNode,
+  GraphEdge,
+  RelationTriple,
+  Subgraph,
+  UpsertRelationshipInput,
+  TraversalOptions,
+} from "../graph_stores/base";
+import { MemgraphGraphStore } from "../graph_stores/memgraph";
+import { KuzuGraphStore } from "../graph_stores/kuzu";
+import {
   AddMemoryOptions,
   SearchMemoryOptions,
   DeleteAllMemoryOptions,
@@ -75,6 +86,7 @@ export class Memory {
   private collectionName: string | undefined;
   private apiVersion: string;
   private graphMemory?: MemoryGraph;
+  private graphNativeStore?: GraphStore;
   private enableGraph: boolean;
   private reranker?: Reranker;
   telemetryId: string;
@@ -125,7 +137,23 @@ export class Memory {
 
     // Initialize graph memory if configured
     if (this.enableGraph && this.config.graphStore) {
-      this.graphMemory = new MemoryGraph(this.config);
+      const gProvider = this.config.graphStore.provider.toLowerCase();
+      if (gProvider === "memgraph") {
+        this.graphNativeStore = new MemgraphGraphStore({
+          url: this.config.graphStore.config.url,
+          username: this.config.graphStore.config.username,
+          password: this.config.graphStore.config.password,
+          dimension: this.config.embedder.config.embeddingDims,
+        });
+      } else if (gProvider === "kuzu") {
+        this.graphNativeStore = new KuzuGraphStore({
+          dbPath: (this.config.graphStore.config as any).dbPath,
+          dimension: this.config.embedder.config.embeddingDims,
+        });
+      } else {
+        // Legacy "neo4j" provider — uses the existing MemoryGraph class
+        this.graphMemory = new MemoryGraph(this.config);
+      }
     }
 
     // Initialize reranker if configured
@@ -856,5 +884,215 @@ export class Memory {
     );
 
     return memoryId;
+  }
+
+  // ─── Graph-native API (Graphiti-style) ───────────────────────────────────
+  //
+  // These methods require `enableGraph: true` with a Memgraph or KuzuDB
+  // graphStore provider.  They expose the underlying graph topology:
+  // nodes (entities), edges (relationships), neighborhood traversal,
+  // and subgraph extraction.
+
+  private ensureGraphStore(): GraphStore {
+    if (!this.graphNativeStore) {
+      throw new Error(
+        "Graph-native operations require enableGraph: true and a " +
+          '"memgraph" or "kuzu" graphStore provider in config.',
+      );
+    }
+    return this.graphNativeStore;
+  }
+
+  /**
+   * Search entity **nodes** by semantic similarity.
+   *
+   * ```ts
+   * const nodes = await memory.searchNodes("TypeScript", { userId: "u1" });
+   * // → [{ id, name: "typescript", type: "technology", score: 0.92, ... }]
+   * ```
+   */
+  async searchNodes(
+    query: string,
+    config: SearchMemoryOptions,
+  ): Promise<GraphNode[]> {
+    const gs = this.ensureGraphStore();
+    const embedding = await this.embedder.embed(query, "search");
+    const filters = this.buildFilters(config);
+    return gs.searchNodes(embedding, filters, config.limit, config.threshold);
+  }
+
+  /**
+   * Search **edges** (relationship triples) by semantic similarity on their
+   * endpoint entities.
+   *
+   * ```ts
+   * const edges = await memory.searchEdges("programming languages", { userId: "u1" });
+   * // → [{ source: "alice", relationship: "USES", target: "typescript", score: 0.89 }]
+   * ```
+   */
+  async searchEdges(
+    query: string,
+    config: SearchMemoryOptions,
+  ): Promise<RelationTriple[]> {
+    const gs = this.ensureGraphStore();
+    const embedding = await this.embedder.embed(query, "search");
+    const filters = this.buildFilters(config);
+    return gs.searchEdges(embedding, filters, config.limit, config.threshold);
+  }
+
+  /**
+   * Return the **neighborhood** of a node — all nodes and edges within N hops.
+   *
+   * ```ts
+   * const { nodes, edges } = await memory.getNeighborhood(nodeId, { userId: "u1" });
+   * ```
+   */
+  async getNeighborhood(
+    nodeId: string,
+    config: SearchMemoryOptions & TraversalOptions,
+  ): Promise<Subgraph> {
+    const gs = this.ensureGraphStore();
+    const filters = this.buildFilters(config);
+    return gs.getNeighborhood(nodeId, filters, {
+      depth: config.depth,
+      limit: config.limit,
+      relationshipTypes: config.relationshipTypes,
+    });
+  }
+
+  /**
+   * Return a **subgraph** (ego-graph) centered on a node — includes edges
+   * between neighbors, not just edges to the center.
+   *
+   * ```ts
+   * const subgraph = await memory.getSubgraph(nodeId, { userId: "u1", depth: 2 });
+   * ```
+   */
+  async getSubgraph(
+    nodeId: string,
+    config: SearchMemoryOptions & TraversalOptions,
+  ): Promise<Subgraph> {
+    const gs = this.ensureGraphStore();
+    const filters = this.buildFilters(config);
+    return gs.getSubgraph(nodeId, filters, {
+      depth: config.depth,
+      limit: config.limit,
+      relationshipTypes: config.relationshipTypes,
+    });
+  }
+
+  /**
+   * Upsert a relationship between two entities. Creates nodes if they don't
+   * exist; merges the edge if it already does.
+   *
+   * ```ts
+   * const edge = await memory.upsertRelationship({
+   *   sourceName: "Alice",
+   *   sourceType: "person",
+   *   targetName: "TypeScript",
+   *   targetType: "technology",
+   *   relationship: "USES",
+   * }, { userId: "u1" });
+   * ```
+   */
+  async upsertRelationship(
+    input: UpsertRelationshipInput,
+    config: { userId?: string; agentId?: string; runId?: string },
+  ): Promise<GraphEdge> {
+    const gs = this.ensureGraphStore();
+    const filters = this.buildFilters(config);
+
+    // Embed both entity names for similarity search later
+    const [srcEmb, tgtEmb] = await Promise.all([
+      this.embedder.embed(input.sourceName),
+      this.embedder.embed(input.targetName),
+    ]);
+
+    return gs.upsertRelationship(input, { source: srcEmb, target: tgtEmb }, filters);
+  }
+
+  /**
+   * Delete a specific relationship triple.
+   *
+   * ```ts
+   * await memory.deleteRelationship("Alice", "USES", "TypeScript", { userId: "u1" });
+   * ```
+   */
+  async deleteRelationship(
+    sourceName: string,
+    relationship: string,
+    targetName: string,
+    config: { userId?: string; agentId?: string; runId?: string },
+  ): Promise<void> {
+    const gs = this.ensureGraphStore();
+    const filters = this.buildFilters(config);
+    return gs.deleteRelationship(sourceName, relationship, targetName, filters);
+  }
+
+  /**
+   * Get a single entity node by ID from the graph store.
+   *
+   * ```ts
+   * const node = await memory.getGraphNode(nodeId, { userId: "u1" });
+   * ```
+   */
+  async getGraphNode(
+    nodeId: string,
+    config: { userId?: string; agentId?: string; runId?: string },
+  ): Promise<GraphNode | null> {
+    const gs = this.ensureGraphStore();
+    const filters = this.buildFilters(config);
+    return gs.getNode(nodeId, filters);
+  }
+
+  /**
+   * Delete a single entity node (and its incident edges) by ID.
+   *
+   * ```ts
+   * await memory.deleteGraphNode(nodeId, { userId: "u1" });
+   * ```
+   */
+  async deleteGraphNode(
+    nodeId: string,
+    config: { userId?: string; agentId?: string; runId?: string },
+  ): Promise<void> {
+    const gs = this.ensureGraphStore();
+    const filters = this.buildFilters(config);
+    return gs.deleteNode(nodeId, filters);
+  }
+
+  /**
+   * Return all relationship triples in the graph store for a user.
+   */
+  async getAllRelationships(
+    config: GetAllMemoryOptions,
+  ): Promise<RelationTriple[]> {
+    const gs = this.ensureGraphStore();
+    const filters = this.buildFilters(config);
+    return gs.getAll(filters, config.limit);
+  }
+
+  /**
+   * Delete all graph data (nodes + edges) for a user.
+   */
+  async deleteAllGraph(
+    config: DeleteAllMemoryOptions,
+  ): Promise<void> {
+    const gs = this.ensureGraphStore();
+    const filters = this.buildFilters(config);
+    return gs.deleteAll(filters);
+  }
+
+  /** Build SearchFilters from userId/agentId/runId options. */
+  private buildFilters(config: {
+    userId?: string;
+    agentId?: string;
+    runId?: string;
+  }): SearchFilters {
+    const filters: SearchFilters = {};
+    if (config.userId) filters.userId = config.userId;
+    if (config.agentId) filters.agentId = config.agentId;
+    if (config.runId) filters.runId = config.runId;
+    return filters;
   }
 }

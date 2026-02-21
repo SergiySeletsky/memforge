@@ -61,8 +61,12 @@ export interface Neo4jConfig {
 }
 
 export interface GraphStoreConfig {
+  /** Graph store provider: "neo4j" (legacy MemoryGraph), "memgraph", or "kuzu". */
   provider: string;
-  config: Neo4jConfig;
+  config: Neo4jConfig & {
+    /** KuzuDB-only: path to database directory. Omit or ":memory:" for in-process. */
+    dbPath?: string;
+  };
   llm?: LLMConfig;
   customPrompt?: string;
 }
