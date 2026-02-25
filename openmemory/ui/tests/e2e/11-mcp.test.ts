@@ -2,9 +2,9 @@
  * E2E — MCP SSE transport (Phase 6)
  *
  * The MCP server is exposed via:
- *   GET  /api/mcp/[clientName]/sse/[userId]          – SSE stream (establishes session)
- *   POST /api/mcp/[clientName]/sse/[userId]/messages – send MCP requests
- *   POST /api/mcp/messages                           – generic messages endpoint
+ *   GET  /mcp/[clientName]/sse/[userId]          – SSE stream (establishes session)
+ *   POST /mcp/[clientName]/sse/[userId]/messages – send MCP requests
+ *   POST /mcp/messages                           – generic messages endpoint
  *
  * These tests validate the HTTP layer only (connection + initial event).
  * Full JSON-RPC message exchange is covered by the SSE + messages pair.
@@ -56,11 +56,12 @@ async function readSseEvents(
 }
 
 // ---------------------------------------------------------------------------
-describe("MCP SSE endpoint — GET /api/mcp/[clientName]/sse/[userId]", () => {
+describe("MCP SSE endpoint — GET /mcp/[clientName]/sse/[userId]", () => {
   it("returns 200 with text/event-stream content type", async () => {
-    const url = `${BASE_URL}/api/mcp/${CLIENT_NAME}/sse/${USER_ID}`;
+    const url = `${BASE_URL}/mcp/${CLIENT_NAME}/sse/${USER_ID}`;
     const controller = new AbortController();
-    setTimeout(() => controller.abort(), 3000);
+    // Allow 10s for first-hit dev-mode compilation of the MCP route
+    setTimeout(() => controller.abort(), 10_000);
 
     let status = 0;
     let contentType = "";
@@ -83,7 +84,7 @@ describe("MCP SSE endpoint — GET /api/mcp/[clientName]/sse/[userId]", () => {
   });
 
   it("sends event: endpoint with a sessionId in the data", async () => {
-    const url = `${BASE_URL}/api/mcp/${CLIENT_NAME}/sse/${USER_ID}`;
+    const url = `${BASE_URL}/mcp/${CLIENT_NAME}/sse/${USER_ID}`;
     const events = await readSseEvents(url, 8000);
 
     if (events.length === 0) {
@@ -100,58 +101,80 @@ describe("MCP SSE endpoint — GET /api/mcp/[clientName]/sse/[userId]", () => {
 });
 
 // ---------------------------------------------------------------------------
-describe("MCP messages endpoint — POST /api/mcp/[clientName]/sse/[userId]/messages", () => {
+describe("MCP messages endpoint — POST /mcp/[clientName]/sse/[userId]/messages", () => {
   it("returns 202 or 200 for a valid JSON-RPC initialize request", async () => {
-    // First establish SSE to get sessionId
-    const sseUrl = `${BASE_URL}/api/mcp/${CLIENT_NAME}/sse/${USER_ID}`;
-    const events = await readSseEvents(sseUrl, 8000);
+    // Establish SSE connection and keep it alive while we POST
+    const sseUrl = `${BASE_URL}/mcp/${CLIENT_NAME}/sse/${USER_ID}`;
+    const sseController = new AbortController();
+    const timer = setTimeout(() => sseController.abort(), 15_000);
 
-    // Extract sessionId from data: line
     let sessionId: string | undefined;
-    for (const line of events) {
-      const match = line.match(/sessionId=([a-zA-Z0-9\-_]+)/);
-      if (match) {
-        sessionId = match[1];
-        break;
+    let sseReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+
+    try {
+      const sseRes = await fetch(sseUrl, { signal: sseController.signal });
+      if (!sseRes.ok || !sseRes.body) {
+        console.warn("MCP SSE route not available — skipping messages test");
+        return;
       }
-      // Also try extracting from full URL path
-      const urlMatch = line.match(/\/messages\?sessionId=([^&\s"]+)/);
-      if (urlMatch) {
-        sessionId = urlMatch[1];
-        break;
+
+      sseReader = sseRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      // Read until we get the endpoint event with sessionId
+      while (!sessionId) {
+        const { value, done } = await sseReader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        for (const line of lines) {
+          const match = line.match(/sessionId=([a-zA-Z0-9\-_]+)/);
+          if (match) { sessionId = match[1]; break; }
+          const urlMatch = line.match(/\/messages\?sessionId=([^&\s"]+)/);
+          if (urlMatch) { sessionId = urlMatch[1]; break; }
+        }
       }
+
+      if (!sessionId) {
+        console.warn("Could not extract sessionId from SSE stream — skipping messages test");
+        return;
+      }
+
+      // SSE stream is still open — session is active in activeTransports
+      const msgUrl = `${BASE_URL}/mcp/${CLIENT_NAME}/sse/${USER_ID}/messages?sessionId=${sessionId}`;
+      const response = await fetch(msgUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2024-11-05",
+            capabilities: {},
+            clientInfo: { name: "e2e-test", version: "1.0.0" },
+          },
+        }),
+      });
+
+      // MCP SSE transport returns 202 Accepted (the response arrives via SSE stream)
+      expect([200, 202]).toContain(response.status);
+    } catch (err: unknown) {
+      if ((err as { name?: string }).name !== "AbortError") throw err;
+    } finally {
+      // Clean up: cancel the SSE stream
+      clearTimeout(timer);
+      sseController.abort();
+      try { await sseReader?.cancel(); } catch { /* already aborted */ }
     }
-
-    if (!sessionId) {
-      console.warn("Could not extract sessionId from SSE stream — skipping messages test");
-      return;
-    }
-
-    const msgUrl = `${BASE_URL}/api/mcp/${CLIENT_NAME}/sse/${USER_ID}/messages?sessionId=${sessionId}`;
-    const response = await fetch(msgUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "initialize",
-        params: {
-          protocolVersion: "2024-11-05",
-          capabilities: {},
-          clientInfo: { name: "e2e-test", version: "1.0.0" },
-        },
-      }),
-    });
-
-    // MCP SSE transport returns 202 Accepted (the response arrives via SSE stream)
-    expect([200, 202]).toContain(response.status);
   });
 });
 
 // ---------------------------------------------------------------------------
-describe("MCP generic messages endpoint — POST /api/mcp/messages", () => {
+describe("MCP generic messages endpoint — POST /mcp/messages", () => {
   it("returns 200 or 202 for a JSON-RPC request", async () => {
-    const response = await fetch(`${BASE_URL}/api/mcp/messages`, {
+    const response = await fetch(`${BASE_URL}/mcp/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

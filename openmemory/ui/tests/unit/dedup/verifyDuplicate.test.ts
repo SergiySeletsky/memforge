@@ -7,21 +7,19 @@ export {};
  * VERIFY_03: Distinct facts → DIFFERENT
  * VERIFY_04: Cache hit — second call for same pair uses cache (LLM called only once)
  */
-import { verifyDuplicate } from "@/lib/dedup/verifyDuplicate";
-import { pairHash, getCached, setCached } from "@/lib/dedup/cache";
-
-jest.mock("openai");
-
-import OpenAI from "openai";
 
 const mockCreate = jest.fn();
-(OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(() => ({
-  chat: {
-    completions: {
-      create: mockCreate,
-    },
-  },
-} as any));
+
+// Mock the LLM client factory so we never check Azure credentials
+jest.mock("@/lib/ai/client", () => ({
+  getLLMClient: () => ({
+    chat: { completions: { create: mockCreate } },
+  }),
+  resetLLMClient: jest.fn(),
+}));
+
+import { verifyDuplicate } from "@/lib/dedup/verifyDuplicate";
+import { pairHash, getCached, setCached } from "@/lib/dedup/cache";
 
 beforeEach(() => {
   jest.clearAllMocks();

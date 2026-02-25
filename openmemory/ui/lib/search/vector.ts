@@ -9,6 +9,7 @@
  */
 
 import { runRead } from "@/lib/db/memgraph";
+import { ensureVectorIndexes } from "@/lib/db/memgraph";
 import { embed } from "@/lib/embeddings/openai";
 
 export interface VectorResult {
@@ -32,6 +33,9 @@ export async function vectorSearch(
   limit = 20
 ): Promise<VectorResult[]> {
   try {
+    // Ensure vector index exists (no-op after first successful check)
+    await ensureVectorIndexes();
+
     const embedding = await embed(query);
     const records = await runRead(
       `CALL vector_search.search("memory_vectors", toInteger($fetchLimit), $embedding)

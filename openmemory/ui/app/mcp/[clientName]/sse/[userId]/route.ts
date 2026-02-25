@@ -1,5 +1,5 @@
 /**
- * GET /api/mcp/:clientName/sse/:userId — SSE endpoint for MCP connections
+ * GET /mcp/:clientName/sse/:userId — SSE endpoint for MCP connections
  *
  * Port of openmemory/api/app/mcp_server.py (GET /mcp/{client_name}/sse/{user_id})
  *

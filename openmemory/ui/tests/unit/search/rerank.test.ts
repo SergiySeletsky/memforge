@@ -11,11 +11,12 @@ export {};
 
 const mockCreate = jest.fn();
 
-jest.mock("openai", () => ({
-  __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
+// Mock the LLM client factory so we never check Azure credentials
+jest.mock("@/lib/ai/client", () => ({
+  getLLMClient: () => ({
     chat: { completions: { create: mockCreate } },
-  })),
+  }),
+  resetLLMClient: jest.fn(),
 }));
 
 import { crossEncoderRerank } from "@/lib/search/rerank";

@@ -1474,3 +1474,29 @@ All 41 tasks completed with 0 failures. Overall score: **0.5654** (avg of type a
 ### Patterns
 - **Large repo submission via API:** For repos too large to clone (embeddings-benchmark/results = 83K objects), use GitHub Git Data API (blobs → tree → commit → ref update → PR) via `gh api`. Avoids clone entirely.
 - **Fork sync before PR:** Always `merge-upstream` the fork before creating a branch to avoid merge conflicts.
+
+---
+
+## Session — MCP SSE Test Fix + 260/260 Green (2025-07-27)
+
+### Objective
+Fix the last remaining failing test (`tests/e2e/11-mcp.test.ts`) to achieve 260/260 tests passing.
+
+### Root Causes
+1. **Wrong URL prefix:** Test used `/api/mcp/...` but the route is at `app/mcp/...` (path: `/mcp/...`). No `/api/` prefix.
+2. **Timeout too short:** First SSE fetch used a 3s abort timeout, but Next.js dev-mode compilation on first hit takes ~3s. Increased to 10s.
+3. **Session cleanup race:** `readSseEvents()` called `reader.cancel()` after extracting sessionId, which triggered the SSE route's `cancel()` callback and removed the transport from `activeTransports`. The subsequent POST to `/messages?sessionId=...` got 404. Fixed by keeping the SSE stream alive during the POST, cleaning up in `finally`.
+
+### Changes Made
+| File | Change |
+|------|--------|
+| `tests/e2e/11-mcp.test.ts` | Fixed all URLs from `/api/mcp/...` → `/mcp/...`; increased SSE timeout 3s → 10s; restructured messages test to keep SSE alive during POST |
+| `app/mcp/[clientName]/sse/[userId]/route.ts` | Fixed misleading comment `GET /api/mcp/...` → `GET /mcp/...` |
+
+### Verification
+- `pnpm test -- tests/e2e/11-mcp.test.ts`: **4/4 passed** (264ms, 9ms, 47ms, 17ms)
+- `pnpm test` (full suite): **260/260 tests, 41/41 suites — ALL PASS** (141.8s)
+
+### Patterns
+- **Next.js App Router path mapping:** `app/mcp/[x]/route.ts` → `/mcp/:x`, NOT `/api/mcp/:x`. Only files under `app/api/` get the `/api/` prefix. Always verify route path matches actual file location.
+- **SSE session lifecycle in tests:** When testing SSE + POST flows, keep the SSE stream reader open until after the POST completes. Cancelling the reader triggers server-side cleanup of `activeTransports`, making POST against that session return 404.
