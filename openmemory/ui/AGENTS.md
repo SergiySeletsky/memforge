@@ -1500,3 +1500,113 @@ Fix the last remaining failing test (`tests/e2e/11-mcp.test.ts`) to achieve 260/
 ### Patterns
 - **Next.js App Router path mapping:** `app/mcp/[x]/route.ts` → `/mcp/:x`, NOT `/api/mcp/:x`. Only files under `app/api/` get the `/api/` prefix. Always verify route path matches actual file location.
 - **SSE session lifecycle in tests:** When testing SSE + POST flows, keep the SSE stream reader open until after the POST completes. Cancelling the reader triggers server-side cleanup of `activeTransports`, making POST against that session return 404.
+
+---
+
+## Session — Full Coverage Baseline (2026-02-26)
+
+### Objective
+Run all unit tests across both packages (`openmemory/ui` and `mem0-ts`) with coverage reporting to identify untested blind spots.
+
+### Results
+
+#### openmemory/ui (`pnpm test -- --coverage`)
+- **Overall:** 79.5% stmts | 57.0% branch | 80.2% funcs | 81.6% lines
+- **Unit tests:** 188 passed
+- **E2E tests:** 72 failed — all `TypeError: fetch failed` (no running dev server, expected)
+- **Known pre-existing failures:** 3 in `tests/unit/entities/resolve.test.ts` (unchanged)
+
+| File | Stmts | Branch | Funcs | Risk |
+|------|-------|--------|-------|------|
+| `lib/embeddings/openai.ts` | 29% | 30% | **0%** | CRITICAL |
+| `lib/memory/categorize.ts` | 35% | **0%** | 50% | CRITICAL |
+| `app/api/v1/memories/[memoryId]/route.ts` | 40% | 15% | 50% | CRITICAL |
+| `lib/entities/link.ts` | 50% | **0%** | **0%** | HIGH |
+| `lib/db/memgraph.ts` | 63% | 41% | 80% | HIGH (DB layer) |
+| `lib/config/helpers.ts` | 69% | 73% | 67% | MEDIUM |
+| `lib/memory/write.ts` | 74% | **25%** | 40% | HIGH (write pipeline) |
+| `lib/search/hybrid.ts` | 79% | 59% | 70% | MEDIUM |
+| `lib/clusters/summarize.ts` | 67% | 21% | 100% | MEDIUM |
+| `lib/mcp/server.ts` | 83% | 68% | 91% | LOW |
+
+#### mem0-ts (`pnpm test -- --coverage`)
+- **Overall:** 54.3% stmts | 40.5% branch | 43.5% funcs | 55.2% lines — **BELOW 90% threshold**
+- **All 215 tests passing**
+
+| File | Stmts | Branch | Funcs | Risk |
+|------|-------|--------|-------|------|
+| `src/graph_stores/memgraph.ts` | **2.7%** | **0%** | **0%** | CRITICAL |
+| `src/vector_stores/memgraph.ts` | **2.9%** | **0%** | **0%** | CRITICAL |
+| `src/memory/graph_memory.ts` | **4.4%** | **0%** | **0%** | CRITICAL |
+| `src/utils/bm25.ts` | **3.2%** | **0%** | **0%** | CRITICAL |
+| `src/embeddings/langchain.ts` | **6.7%** | **0%** | **0%** | CRITICAL |
+| `src/llms/langchain.ts` | **5.7%** | **0%** | **0%** | CRITICAL |
+| `src/llms/mistral.ts` | **6.3%** | **0%** | **0%** | CRITICAL |
+| `src/storage/<MemoryManager variations>` | 9–40% | 0%+ | 0–40% | HIGH |
+| `src/llms/anthropic.ts` | 32% | 13% | 17% | HIGH |
+| `src/llms/azure.ts` | 30% | 35% | 17% | HIGH |
+| `src/llms/google.ts` | 36% | 7% | 25% | HIGH |
+| `src/llms/groq.ts` | 43% | 15% | 20% | HIGH |
+| `src/llms/ollama.ts` | 39% | 24% | 22% | HIGH |
+| `src/reranker/cohere.ts` | 29% | 13% | 33% | HIGH |
+| `src/embeddings/azure.ts` | 54% | 64% | 25% | MEDIUM |
+| `src/embeddings/google.ts` | 50% | 50% | 25% | MEDIUM |
+| `src/memory/index.ts` | 74% | 55% | 83% | MEDIUM |
+
+### Top Blind Spots by Priority
+
+1. **`lib/embeddings/openai.ts` (openmemory/ui) — 0% function coverage.** Core embedding path, called by write pipeline and hybrid search. Zero tests exercise the actual `embed()` function. Current tests mock it entirely.
+2. **`lib/memory/categorize.ts` — 35% stmts, 0% branch.** Fire-and-forget categorization in the write pipeline. No test covers the LLM call, JSON parsing, or Cypher attach path.
+3. **`lib/memory/write.ts` — 25% branch, 40% functions.** The primary write pipeline. `addMemory()` body (lines 201–320) and supersession path (331–340) are untested. `Security/Data` risk.
+4. **`lib/db/memgraph.ts` — lines 69–231 uncovered.** `initSchema()`, `runWrite()` retry, pool management, and error-handling paths all lack unit coverage. Mocked at test boundary but never validated structurally.
+5. **`src/graph_stores/memgraph.ts` / `src/vector_stores/memgraph.ts` (mem0-ts) — 0% coverage.** The entire Memgraph adapter is untested. All tests use the Kuzu adapter.
+6. **`src/memory/graph_memory.ts` (mem0-ts) — 4.4%.** Graph memory pipeline untested; only Kuzu integration tests exercise the non-graph path.
+7. **`src/llms/*` (mem0-ts) — most LLM providers < 40%.** Only OpenAI, DeepSeek, LMStudio, Together, and xAI adapters have meaningful coverage. Anthropic, Azure, Google, Groq, Mistral, Ollama, and Langchain are effectively untested.
+
+### Recommendations (Ranked by Impact × Risk)
+
+| Priority | Action |
+|----------|--------|
+| P1 | Write unit tests for `lib/memory/write.ts` (`addMemory`, `supersedeMemory`) with mocked Memgraph and embed. Data/Security risk. |
+| P2 | Write unit tests for `lib/memory/categorize.ts` (LLM response parsing, Cypher attach, fire-and-forget isolation). |
+| P3 | Write unit tests for `lib/embeddings/openai.ts` (`embed()`, Azure fallback, dimension assertion). |
+| P4 | Write unit tests for `lib/db/memgraph.ts` (`runWrite` retry logic, pool connection, `initSchema` idempotency). |
+| P5 | Add Memgraph adapter mock tests in `mem0-ts` for `src/graph_stores/memgraph.ts` and `src/vector_stores/memgraph.ts`. |
+| P6 | Add unit tests for `app/api/v1/memories/[memoryId]/route.ts` (GET/PUT/DELETE with mocked `runRead`/`runWrite`). |
+| P7 | Expand `mem0-ts` LLM provider coverage (Anthropic, Azure, Google) — adapter contract tests with mocked HTTP. |
+
+### Verification
+- `pnpm test -- --coverage` (openmemory/ui): 188 unit pass, 72 e2e fail (expected, no server)
+- `pnpm test -- --coverage` (mem0-ts): 215/215 pass
+
+---
+
+## Session — E2E Full Run Against Live Memgraph (2026-02-26)
+
+### Objective
+Run e2e suite with Memgraph live to get real integration results.
+
+### Issues Fixed
+1. **`jest.e2e.config.ts` TypeScript error:** `import type { Config } from "jest"` fails with `@types/jest@29.5.14` — not a module. Changed to `import type { JestConfigWithTsJest as Config } from "ts-jest"` (matches unit jest.config.ts pattern).
+2. **Memgraph crash loop (exit 139 SIGSEGV):** Container had corrupted WAL in `openmemory_memgraph_data` volume from previous abrupt kill during e2e run. Fixed by: `docker rm -f memgraph && docker volume rm openmemory_memgraph_data && docker-compose up -d memgraph`.
+
+### Result
+**73/73 e2e tests PASS** (100.991 s)
+
+All 11 suites passed:
+- 01-memory-crud: 12/12 ✓ (CRUD, supersession, filter, search)
+- 02-bi-temporal: 7/7 ✓ (V1→V2→V3 supersession chain)
+- 03-dedup: 4/4 ✓ (ADD, SKIP_DUPLICATE, distinct facts)
+- 04-entities: 5/5 ✓ (extraction, type filter, detail endpoint)
+- 05-bulk: 5/5 ✓ (batch create, concurrency)
+- 06-search: 8/8 ✓ (hybrid, vector, text, keyword, namespace isolation)
+- 07-clusters: 4/4 ✓ (rebuild accepted; Louvain/MAGE not installed → graceful skip)
+- 08-namespace-isolation: 9/9 ✓ (cross-user 404, list isolation, PUT blocked)
+- 09-apps-stats: 8/8 ✓ (stats shape, apps list, pagination, detail, 404)
+- 10-actions-config: 8/8 ✓ (archive, pause, config GET/PUT roundtrip)
+- 11-mcp: 4/4 ✓ (SSE, sessionId, POST messages, generic messages)
+
+### Patterns
+- **`jest.e2e.config.ts` type import:** Use `import type { JestConfigWithTsJest as Config } from "ts-jest"` NOT `import type { Config } from "jest"` — the latter is a module export not available in `@types/jest@29`.
+- **Memgraph WAL corruption:** If Memgraph container exits 139 (SIGSEGV) in a crash loop, wipe the data volume: `docker rm -f memgraph && docker volume rm openmemory_memgraph_data`. Do NOT just restart — it will loop indefinitely.
+- **e2e pre-flight checklist:** Before running `pnpm test:e2e`: (1) verify `docker ps` shows memgraph UP; (2) TCP test bolt port 7687; (3) confirm dev server on :3000.
