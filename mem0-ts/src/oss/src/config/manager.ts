@@ -101,10 +101,12 @@ export class ConfigManager {
         ...DEFAULT_MEMORY_CONFIG.graphStore,
         ...userConfig.graphStore,
       },
-      historyStore: {
-        ...DEFAULT_MEMORY_CONFIG.historyStore,
-        ...userConfig.historyStore,
-      },
+      // Only include historyStore if the user explicitly configured one.
+      // When undefined, the Memory constructor auto-selects based on
+      // vectorStore.provider (kuzu → kuzu, memory → memory, else → memgraph).
+      historyStore: userConfig.historyStore
+        ? { ...DEFAULT_MEMORY_CONFIG.historyStore, ...userConfig.historyStore }
+        : undefined,
       disableHistory:
         userConfig.disableHistory || DEFAULT_MEMORY_CONFIG.disableHistory,
       enableGraph: userConfig.enableGraph || DEFAULT_MEMORY_CONFIG.enableGraph,

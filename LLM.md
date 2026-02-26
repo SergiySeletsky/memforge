@@ -55,74 +55,52 @@ const result = await memory.add('My name is John', { userId: 'john' });
 import { Memory } from 'mem0ai/oss';
 
 const memory = new Memory({
-  vectorStore: { provider: 'qdrant', config: { host: 'localhost', port: 6333 } },
-  llm: { provider: 'openai', config: { model: 'gpt-4.1-nano-2025-04-14' } },
+  vectorStore: { provider: 'memory', config: { collectionName: 'memories', dimension: 1536 } }, // default in-memory store
+  llm: { provider: 'openai', config: { model: 'gpt-4-turbo-preview' } },
   embedder: { provider: 'openai', config: { model: 'text-embedding-3-small' } },
   graphStore: { provider: 'neo4j', config: { url: 'bolt://localhost:7687', username: 'neo4j', password: 'password' } }, // optional
-  customFactExtractionPrompt: 'Custom prompt...',
-  customUpdateMemoryPrompt: 'Custom prompt...',
+  customPrompt: 'Custom fact extraction prompt...',
+  customUpdateMemoryPrompt: 'Custom update memory prompt...',
+  historyStore: { provider: 'memgraph', config: { url: 'bolt://localhost:7687', username: 'memgraph', password: 'memgraph' } }, // optional
+  disableHistory: false, // set true to skip history tracking
+  reranker: { provider: 'cohere', config: { apiKey: process.env.COHERE_API_KEY! } }, // optional
 });
 ```
 
 ### Supported Providers
 
-#### LLM Providers (19 supported)
+#### LLM Providers (13 supported)
 - **openai** - OpenAI GPT models (default)
 - **anthropic** - Claude models
-- **gemini** - Google Gemini
+- **google** - Google Gemini models
 - **groq** - Groq inference
 - **ollama** - Local Ollama models
 - **together** - Together AI
-- **aws_bedrock** - AWS Bedrock models
-- **azure_openai** - Azure OpenAI
-- **litellm** - LiteLLM proxy
+- **azure** - Azure OpenAI
 - **deepseek** - DeepSeek models
 - **xai** - xAI models
-- **sarvam** - Sarvam AI
+- **mistral** - Mistral AI models
 - **lmstudio** - LM Studio local server
-- **vllm** - vLLM inference server
 - **langchain** - LangChain integration
 - **openai_structured** - OpenAI with structured output
-- **azure_openai_structured** - Azure OpenAI with structured output
 
-#### Embedding Providers (10 supported)
+#### Embedding Providers (6 supported)
 - **openai** - OpenAI embeddings (default)
 - **ollama** - Ollama embeddings
-- **huggingface** - HuggingFace models
-- **azure_openai** - Azure OpenAI embeddings
-- **gemini** - Google Gemini embeddings
-- **vertexai** - Google Vertex AI
-- **together** - Together AI embeddings
+- **azure** - Azure OpenAI embeddings
+- **google** - Google Gemini embeddings
 - **lmstudio** - LM Studio embeddings
 - **langchain** - LangChain embeddings
-- **aws_bedrock** - AWS Bedrock embeddings
 
-#### Vector Store Providers (19 supported)
-- **qdrant** - Qdrant vector database (default)
-- **chroma** - ChromaDB
-- **pinecone** - Pinecone vector database
-- **pgvector** - PostgreSQL with pgvector
-- **mongodb** - MongoDB Atlas Vector Search
-- **milvus** - Milvus vector database
-- **weaviate** - Weaviate
-- **faiss** - Facebook AI Similarity Search
-- **redis** - Redis vector search
-- **elasticsearch** - Elasticsearch
-- **opensearch** - OpenSearch
-- **azure_ai_search** - Azure AI Search
-- **vertex_ai_vector_search** - Google Vertex AI Vector Search
-- **upstash_vector** - Upstash Vector
-- **supabase** - Supabase vector
-- **baidu** - Baidu vector database
-- **langchain** - LangChain vector stores
-- **s3_vectors** - Amazon S3 Vectors
-- **databricks** - Databricks vector stores
+#### Vector Store Providers (3 supported)
+- **memory** - In-process in-memory store (default, no external service needed)
+- **memgraph** - Memgraph vector store (requires running Memgraph)
+- **kuzu** - KuzuDB embedded store (fully in-process, no server required)
 
-#### Graph Store Providers (4 supported)
-- **neo4j** - Neo4j graph database
-- **memgraph** - Memgraph
-- **neptune** - AWS Neptune Analytics
-- **kuzu** - Kuzu Graph database
+#### Graph Store Providers (3 supported)
+- **neo4j** - Neo4j graph database (legacy MemoryGraph interface)
+- **memgraph** - Memgraph native graph store
+- **kuzu** - KuzuDB embedded graph store (in-process, no server required)
 
 ### Configuration Examples
 
@@ -131,7 +109,7 @@ const memory = new Memory({
 import { Memory } from 'mem0ai/oss';
 
 const memory = new Memory({
-  llm: { provider: 'openai', config: { model: 'gpt-4.1-nano-2025-04-14', temperature: 0.1, maxTokens: 1000 } },
+  llm: { provider: 'openai', config: { model: 'gpt-4-turbo-preview', temperature: 0.1, maxTokens: 1000 } },
   embedder: { provider: 'openai', config: { model: 'text-embedding-3-small' } },
 });
 ```
@@ -141,73 +119,67 @@ const memory = new Memory({
 const memory = new Memory({
   llm: { provider: 'ollama', config: { model: 'llama3.1:8b', ollamaBaseUrl: 'http://localhost:11434' } },
   embedder: { provider: 'ollama', config: { model: 'nomic-embed-text' } },
-  vectorStore: { provider: 'chroma', config: { collectionName: 'my_memories', path: './chroma_db' } },
+  vectorStore: { provider: 'memory', config: { collectionName: 'my_memories', dimension: 768 } },
 });
 ```
 
 #### Graph Memory with Neo4j
 ```typescript
 const memory = new Memory({
-  graphStore: { provider: 'neo4j', config: { url: 'bolt://localhost:7687', username: 'neo4j', password: 'password', database: 'neo4j' } },
+  enableGraph: true,
+  graphStore: { provider: 'neo4j', config: { url: 'bolt://localhost:7687', username: 'neo4j', password: 'password' } },
 });
 ```
 
-#### Enterprise Setup
+#### Fully Local Setup with KuzuDB (no external services)
 ```typescript
 const memory = new Memory({
-  llm: { provider: 'azure_openai', config: { model: 'gpt-4', azureEndpoint: 'https://your-resource.openai.azure.com/', apiKey: process.env.AZURE_OPENAI_API_KEY!, apiVersion: '2024-02-01' } },
-  vectorStore: { provider: 'pinecone', config: { apiKey: process.env.PINECONE_API_KEY!, indexName: 'mem0-index', dimension: 1536 } },
+  llm: { provider: 'ollama', config: { model: 'llama3.1:8b' } },
+  embedder: { provider: 'ollama', config: { model: 'nomic-embed-text', embeddingDims: 768 } },
+  vectorStore: { provider: 'kuzu', config: { dbPath: './my_db', collectionName: 'memories', dimension: 768 } },
+  disableHistory: true,
+});
+```
+
+#### Azure OpenAI Setup
+```typescript
+const memory = new Memory({
+  llm: { provider: 'azure', config: { model: 'gpt-4', azureEndpoint: 'https://your-resource.openai.azure.com/', apiKey: process.env.AZURE_OPENAI_API_KEY!, apiVersion: '2024-02-01' } },
+  embedder: { provider: 'azure', config: { apiKey: process.env.AZURE_OPENAI_API_KEY! } },
 });
 ```
 
 #### LLM Providers
-- **OpenAI** - GPT-4, GPT-3.5-turbo, and structured outputs
+- **OpenAI** - GPT-4, GPT-4-turbo, and structured outputs
 - **Anthropic** - Claude models with advanced reasoning
-- **Google AI** - Gemini models for multimodal applications
-- **AWS Bedrock** - Enterprise-grade AWS managed models
-- **Azure OpenAI** - Microsoft Azure hosted OpenAI models
+- **Google** - Gemini models for multimodal applications
+- **Azure** - Microsoft Azure hosted OpenAI models
 - **Groq** - High-performance LPU optimized models
 - **Together** - Open-source model inference platform
 - **Ollama** - Local model deployment for privacy
-- **vLLM** - High-performance inference framework
 - **LM Studio** - Local model management
 - **DeepSeek** - Advanced reasoning models
-- **Sarvam** - Indian language models
-- **XAI** - xAI models
-- **LiteLLM** - Unified LLM interface
+- **Mistral** - Mistral AI models
+- **XAI** - xAI Grok models
 - **LangChain** - LangChain LLM integration
+- **OpenAI Structured** - OpenAI with enforced JSON structured output
 
-#### Vector Store Providers
-- **Chroma** - AI-native open-source vector database
-- **Qdrant** - High-performance vector similarity search
-- **Pinecone** - Managed vector database with serverless options
-- **Weaviate** - Open-source vector search engine
-- **PGVector** - PostgreSQL extension for vector search
-- **Milvus** - Open-source vector database for scale
-- **Redis** - Real-time vector storage with Redis Stack
-- **Supabase** - Open-source Firebase alternative
-- **Upstash Vector** - Serverless vector database
-- **Elasticsearch** - Distributed search and analytics
-- **OpenSearch** - Open-source search and analytics
-- **FAISS** - Facebook AI Similarity Search
-- **MongoDB** - Document database with vector search
-- **Azure AI Search** - Microsoft's search service
-- **Vertex AI Vector Search** - Google Cloud vector search
-- **Databricks Vector Search** - Delta Lake integration
-- **Baidu** - Baidu vector database
-- **LangChain** - LangChain vector store integration
+#### Vector Store Providers (OSS TypeScript SDK)
+- **Memory** - In-process in-memory store (default)
+- **Memgraph** - Memgraph graph database with vector support
+- **KuzuDB** - Embedded in-process graph/vector store
 
 #### Embedding Providers
-- **OpenAI** - High-quality text embeddings
-- **Azure OpenAI** - Enterprise Azure-hosted embeddings
-- **Google AI** - Gemini embedding models
-- **AWS Bedrock** - Amazon embedding models
-- **Hugging Face** - Open-source embedding models
-- **Vertex AI** - Google Cloud enterprise embeddings
+- **OpenAI** - High-quality text embeddings (default)
+- **Azure** - Enterprise Azure-hosted embeddings
+- **Google** - Gemini embedding models
 - **Ollama** - Local embedding models
-- **Together** - Open-source model embeddings
 - **LM Studio** - Local model embeddings
 - **LangChain** - LangChain embedder integration
+
+#### Reranker Providers
+- **LLM** - Reranking via any configured LLM
+- **Cohere** - Cohere reranking models
 
 ## TypeScript/JavaScript SDK
 
@@ -233,25 +205,37 @@ const memory = await client.get('memory-id');
 const allMemories = await client.getAll({ user_id: 'user123' });
 
 // Management operations
-await client.update('memory-id', 'Updated content');
+await client.update('memory-id', { text: 'Updated content' }); // text and/or metadata
 await client.delete('memory-id');
 await client.deleteAll({ user_id: 'user123' });
 
 // Batch operations
-await client.batchUpdate([{ id: 'mem1', text: 'new text' }]);
+await client.batchUpdate([{ memoryId: 'mem1', text: 'new text' }]);
 await client.batchDelete(['mem1', 'mem2']);
 
 // User management
 const users = await client.users();
-await client.deleteUsers({ user_ids: ['user1', 'user2'] });
+await client.deleteUsers({ user_id: 'user1' }); // or agent_id, app_id, run_id
 
 // Webhooks
 const webhooks = await client.getWebhooks();
-await client.createWebhook({
-  url: 'https://your-webhook.com',
-  name: 'My Webhook',
-  eventTypes: ['memory.created', 'memory.updated']
+await client.createWebhook({ url: 'https://your-webhook.com', name: 'My Webhook' });
+await client.updateWebhook({ webhookId: 'wh-id', url: 'https://new-url.com' });
+await client.deleteWebhook({ webhookId: 'wh-id' });
+
+// Project management
+const project = await client.getProject({ fields: ['custom_instructions'] });
+await client.updateProject({ custom_instructions: 'Always respond in English' });
+
+// Feedback
+await client.feedback({ memoryId: 'mem-id', feedback: 'POSITIVE' });
+
+// Memory export (structured data extraction)
+const { id } = await client.createMemoryExport({
+  filters: { user_id: 'user123' },
+  schema: { name: 'string', preferences: 'array' }
 });
+const exported = await client.getMemoryExport({ memory_export_id: id });
 ```
 
 ### OSS SDK (Self-Hosted)
@@ -265,12 +249,12 @@ const memory = new Memory({
     config: { apiKey: 'your-key' }
   },
   vectorStore: {
-    provider: 'qdrant',
-    config: { host: 'localhost', port: 6333 }
+    provider: 'memory', // default in-process store
+    config: { collectionName: 'memories', dimension: 1536 }
   },
   llm: {
     provider: 'openai',
-    config: { model: 'gpt-4.1-nano' }
+    config: { model: 'gpt-4-turbo-preview' }
   }
 });
 
@@ -285,14 +269,14 @@ await memory.update('memory-id', 'Updated content');
 await memory.delete('memory-id');
 await memory.deleteAll({ userId: 'user123' });
 
-// History and reset
+// History
 const history = await memory.history('memory-id');
-await memory.reset();
 ```
 
 ### Key TypeScript Types
 
 ```typescript
+// Client SDK types
 interface Message {
   role: 'user' | 'assistant';
   content: string | MultiModalMessages;
@@ -319,11 +303,61 @@ interface MemoryOptions {
   api_version?: 'v1' | 'v2';
   infer?: boolean;
   enable_graph?: boolean;
+  page?: number;
+  page_size?: number;
+  output_format?: string;
+  async_mode?: boolean;
+}
+
+// OSS SDK types
+interface MemoryItem {
+  id: string;
+  memory: string;
+  hash?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  score?: number;
+  metadata?: Record<string, any>;
+}
+
+interface AddMemoryOptions {
+  userId?: string;
+  agentId?: string;
+  runId?: string;
+  metadata?: Record<string, any>;
+  filters?: Record<string, any>;
+  infer?: boolean;           // default: true
+  memoryType?: string;       // 'procedural_memory' for agent step logs
+  prompt?: string;
+}
+
+interface SearchMemoryOptions {
+  userId?: string;
+  agentId?: string;
+  runId?: string;
+  limit?: number;
+  filters?: Record<string, any>;
+  threshold?: number;
+  rerank?: boolean;          // requires reranker configured
 }
 
 interface SearchResult {
-  results: Memory[];
+  results: MemoryItem[];
   relations?: any[];
+}
+
+interface MemoryConfig {
+  version?: string;
+  embedder: { provider: string; config: EmbeddingConfig };
+  vectorStore: { provider: string; config: VectorStoreConfig };
+  llm: { provider: string; config: LLMConfig };
+  graphStore?: GraphStoreConfig;
+  enableGraph?: boolean;
+  historyStore?: { provider: 'memgraph' | 'kuzu' | 'memory'; config: Record<string, any> };
+  disableHistory?: boolean;
+  customPrompt?: string;             // custom fact extraction prompt
+  customUpdateMemoryPrompt?: string;
+  reranker?: { provider: string; config?: Record<string, any> };
 }
 ```
 
@@ -343,10 +377,9 @@ console.log(result.relations); // Graph relationships
 ```
 
 **Supported Graph Databases:**
-- **Neo4j**: Full-featured graph database with Cypher queries
-- **Memgraph**: High-performance in-memory graph database
-- **Neptune**: AWS managed graph database service
-- **kuzu** - OSS Kuzu Graph database
+- **Neo4j**: Full-featured graph database with Cypher queries (legacy `provider: 'neo4j'`)
+- **Memgraph**: High-performance in-memory graph database (`provider: 'memgraph'`)
+- **KuzuDB**: Embedded in-process graph store, no server required (`provider: 'kuzu'`)
 
 ### Multimodal Memory
 
@@ -388,10 +421,10 @@ Extract key facts from the conversation focusing on:
 3. Project requirements
 4. Important dates and deadlines
 
-Conversation: {messages}
+You MUST return a valid JSON object with a 'facts' key containing an array of strings.
 `;
 
-const memory = new Memory({ customFactExtractionPrompt: customExtractionPrompt });
+const memory = new Memory({ customPrompt: customExtractionPrompt }); // use customPrompt, not customFactExtractionPrompt
 ```
 
 
@@ -412,7 +445,7 @@ async function chat(userInput: string, userId: string): Promise<string> {
 
   const prompt = `Context from previous conversations:\n${context}\n\nUser: ${userInput}\nAssistant:`;
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4.1-nano-2025-04-14',
+    model: 'gpt-4-turbo-preview',
     messages: [{ role: 'user', content: prompt }],
   });
   const response = completion.choices[0].message.content ?? '';

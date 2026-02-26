@@ -111,23 +111,38 @@ export class Memory {
     );
     if (this.config.disableHistory) {
       this.db = new DummyHistoryManager();
+    } else if (this.config.historyStore) {
+      this.db = HistoryManagerFactory.create(
+        this.config.historyStore.provider,
+        this.config.historyStore,
+      );
     } else {
-      const defaultConfig = {
-        provider: "memgraph",
-        config: {
-          url: process.env.MEMGRAPH_URL || "bolt://localhost:7687",
-          username: process.env.MEMGRAPH_USER || "memgraph",
-          password: process.env.MEMGRAPH_PASSWORD || "memgraph",
-        },
-      };
-
-      this.db =
-        this.config.historyStore && !this.config.disableHistory
-          ? HistoryManagerFactory.create(
-              this.config.historyStore.provider,
-              this.config.historyStore,
-            )
-          : HistoryManagerFactory.create("memgraph", defaultConfig);
+      // Auto-select history backend to match the vector store so the system
+      // works without Memgraph when vectorStore is "kuzu" or "memory".
+      const vsProvider = this.config.vectorStore.provider.toLowerCase();
+      if (vsProvider === "kuzu") {
+        const dbPath =
+          (this.config.vectorStore.config as any).dbPath ?? ":memory:";
+        this.db = HistoryManagerFactory.create("kuzu", {
+          provider: "kuzu",
+          config: { dbPath },
+        });
+      } else if (vsProvider === "memory") {
+        this.db = HistoryManagerFactory.create("memory", {
+          provider: "memory",
+          config: {},
+        });
+      } else {
+        // Default: Memgraph (works when MEMGRAPH_URL is reachable)
+        this.db = HistoryManagerFactory.create("memgraph", {
+          provider: "memgraph",
+          config: {
+            url: process.env.MEMGRAPH_URL || "bolt://localhost:7687",
+            username: process.env.MEMGRAPH_USER || "memgraph",
+            password: process.env.MEMGRAPH_PASSWORD || "memgraph",
+          },
+        });
+      }
     }
 
     this.collectionName = this.config.vectorStore.config.collectionName;

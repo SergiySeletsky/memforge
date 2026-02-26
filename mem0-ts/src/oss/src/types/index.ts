@@ -63,9 +63,10 @@ export interface Neo4jConfig {
 export interface GraphStoreConfig {
   /** Graph store provider: "neo4j" (legacy MemoryGraph), "memgraph", or "kuzu". */
   provider: string;
-  config: Neo4jConfig & {
+  config: Partial<Neo4jConfig> & {
     /** KuzuDB-only: path to database directory. Omit or ":memory:" for in-process. */
     dbPath?: string;
+    [key: string]: unknown;
   };
   llm?: LLMConfig;
   customPrompt?: string;
@@ -165,11 +166,14 @@ export const MemoryConfigSchema = z.object({
   graphStore: z
     .object({
       provider: z.string(),
-      config: z.object({
-        url: z.string(),
-        username: z.string(),
-        password: z.string(),
-      }),
+      config: z
+        .object({
+          // Memgraph connection fields (optional — not needed for kuzu provider)
+          url: z.string().optional(),
+          username: z.string().optional(),
+          password: z.string().optional(),
+        })
+        .passthrough(),
       llm: z
         .object({
           provider: z.string(),
