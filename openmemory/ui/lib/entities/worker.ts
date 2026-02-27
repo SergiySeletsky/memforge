@@ -18,6 +18,11 @@ import { extractEntitiesFromMemory } from "./extract";
 import { resolveEntity } from "./resolve";
 import { linkMemoryToEntity } from "./link";
 
+/** Local copy — avoids dependency on resolve.ts being mocked in tests. */
+function normalizeName(name: string): string {
+  return name.toLowerCase().replace(/[\s\-_./\\]+/g, "");
+}
+
 export async function processEntityExtraction(memoryId: string): Promise<void> {
   // Step 1: fetch memory content and current extraction status
   const check = await runRead<{ status: string | null; content: string }>(
@@ -49,10 +54,34 @@ export async function processEntityExtraction(memoryId: string): Promise<void> {
     // Step 4: LLM extraction
     const extracted = await extractEntitiesFromMemory(content as string);
 
+    // ENTITY-01: Tier 1 batch — look up all normalizedNames in one UNWIND round-trip.
+    // Only entities that miss the batch lookup fall through to the full resolveEntity()
+    // (Tier 2 alias match + Tier 3 semantic dedup + create-new).
+    const validEntities = extracted.filter((e) => e.name?.trim());
+
+    let tier1Map = new Map<string, string>();
+    if (validEntities.length > 0) {
+      const normNames = validEntities.map((e) => normalizeName(e.name));
+      const tier1Rows = await runRead<{ normName: string; entityId: string }>(
+        `UNWIND $normNames AS normName
+         MATCH (u:User {userId: $userId})-[:HAS_ENTITY]->(e:Entity)
+         WHERE e.normalizedName = normName
+         RETURN normName, e.id AS entityId`,
+        { normNames, userId }
+      ).catch(() => []);
+      // Keep only the first hit per normalized name (in case of duplicates)
+      for (const row of tier1Rows) {
+        if (!tier1Map.has(row.normName)) tier1Map.set(row.normName, row.entityId);
+      }
+    }
+
     // Steps 5 & 6: resolve + link each entity
-    for (const entity of extracted) {
-      if (!entity.name?.trim()) continue;
-      const entityId = await resolveEntity(entity, userId);
+    for (const entity of validEntities) {
+      const normName = normalizeName(entity.name);
+      // Use Tier 1 cache hit; otherwise fall through to full 3-tier resolver
+      const entityId = tier1Map.has(normName)
+        ? tier1Map.get(normName)!
+        : await resolveEntity(entity, userId);
       await linkMemoryToEntity(memoryId, entityId);
     }
 

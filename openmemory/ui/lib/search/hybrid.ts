@@ -34,6 +34,7 @@ export interface HybridSearchOptions {
 export interface HybridSearchResult extends RRFResult {
   content: string;
   categories: string[];
+  tags: string[];
   createdAt: string;
   appName: string | null;
 }
@@ -87,7 +88,8 @@ export async function hybridSearch(
      OPTIONAL MATCH (m)-[:CREATED_BY]->(a:App)
      OPTIONAL MATCH (m)-[:HAS_CATEGORY]->(c:Category)
      RETURN m.id AS id, m.content AS content, m.createdAt AS createdAt,
-            a.appName AS appName, collect(c.name) AS categories`,
+            a.appName AS appName, collect(c.name) AS categories,
+            coalesce(m.tags, []) AS tags`,
     { ids, userId }
   );
 
@@ -101,6 +103,7 @@ export async function hybridSearch(
         ...r,
         content: row.content as string,
         categories: (row.categories as string[]) ?? [],
+        tags: (row.tags as string[]) ?? [],
         createdAt: (row.createdAt as string) ?? "",
         appName: (row.appName as string | null) ?? null,
       } as HybridSearchResult;

@@ -1,4 +1,4 @@
-# OpenMemory — Copilot Instructions
+﻿# OpenMemory — Copilot Instructions
 
 ## Architecture
 
@@ -56,10 +56,46 @@ Live memories always filtered with `WHERE m.invalidAt IS NULL`. Edits call `supe
 `lib/memory/write.ts`: context window → embed → dedup check → `CREATE Memory` node → attach App → fire-and-forget: `categorizeMemory()` + `processEntityExtraction()`. Any new write should follow this pipeline rather than writing Memory nodes directly.
 
 ### LLM / Embedding clients
-Use `getLLMClient()` from `lib/ai/client.ts` and `embed()` from `lib/embeddings/openai.ts`. LLM singleton auto-selects Azure or OpenAI based on env vars. Model for LLM calls: `process.env.LLM_AZURE_DEPLOYMENT ?? process.env.OPENMEMORY_CATEGORIZATION_MODEL ?? "gpt-4o-mini"`. Default embedding provider is [`serhiiseletskyi/intelli-embed-v3`](https://huggingface.co/serhiiseletskyi/intelli-embed-v3) — a custom-trained arctic-embed-l-v2 finetune, 1024-dim, INT8 ONNX, runs locally via `@huggingface/transformers` with no API key; chosen after benchmarking 21 providers because it beats Azure on dedup and negation safety metrics while running at ~11ms on CPU.
+Use `getLLMClient()` from `lib/ai/client.ts` and `embed()` from `lib/embeddings/intelli.ts`. LLM singleton auto-selects Azure or OpenAI based on env vars. Model for LLM calls: `process.env.LLM_AZURE_DEPLOYMENT ?? process.env.OPENMEMORY_CATEGORIZATION_MODEL ?? "gpt-4o-mini"`. Default embedding provider is [`serhiiseletskyi/intelli-embed-v3`](https://huggingface.co/serhiiseletskyi/intelli-embed-v3) — a custom-trained arctic-embed-l-v2 finetune, 1024-dim, INT8 ONNX, runs locally via `@huggingface/transformers` with no API key; chosen after benchmarking 21 providers because it beats Azure on dedup and negation safety metrics while running at ~11ms on CPU.
 
 ### Async config
 `getConfigFromDb()` / `getDedupConfig()` / `getContextWindowConfig()` are **async** — they read Memgraph `Config` nodes. All callers must `await` them.
+
+### Batch queries with UNWIND
+Replace N+1 `runRead` loops with a single UNWIND query:
+```typescript
+const rows = await runRead(
+  `UNWIND $ids AS memId MATCH (u:User {userId:$userId})-[:HAS_MEMORY]->(m {id:memId})-[:HAS_CATEGORY]->(c) RETURN memId AS id, c.name AS name`,
+  { userId, ids }
+);
+```
+
+### Atomic multi-step writes
+```typescript
+import { runTransaction } from '@/lib/db/memgraph';
+const results = await runTransaction([
+  { cypher: 'MERGE (u:User {userId: $userId})', params: { userId } },
+  { cypher: 'CREATE (m:Memory {id: $id, content: $content})', params: { id, content } },
+]);
+```
+
+### Conditional param building
+Never pass `undefined` props to `runRead`/`runWrite` — Memgraph logs unused-param warnings:
+```typescript
+const params: Record<string, unknown> = { userId, offset, limit };
+if (category) params.category = category;  // ✅
+// NOT: { userId, category: undefined }    // ❌
+```
+
+### Null literals in Cypher CREATE
+Memgraph rejects `{ invalidAt: null }` in property maps. Omit the property entirely — absent = semantically null.
+
+### Tags vs Categories
+- `tags` = caller-controlled exact identifiers (`string[]` on Memory node); used for scoped retrieval
+- `categories` = LLM-assigned semantic labels (`:Category` nodes); assigned async via fire-and-forget
+
+### classifyIntent fail-open (MCP)
+Always wrap in its own try/catch with `STORE` default — the outer write-pipeline catch converts uncaught errors into ERROR events (memory lost).
 
 ### Next.js App Router route params
 All dynamic route params are `Promise` in Next.js 15:
@@ -123,89 +159,18 @@ context window, bulk ingestion, community detection, cross-encoder reranking, na
 
 ## Core Execution Framework
 
-### Autonomy Mandate
+- **No confirmation loops.** Proceed: Analyse → Plan → Implement → Verify → Report. Infer intent; state what you chose.
+- **Error recovery order:** (1) `pnpm exec tsc --noEmit`, (2) `pnpm test --runInBand`, (3) `pnpm build`, (4) `pnpm test:pw`. Fix at the failing tier before moving on. 3-attempt limit: escalate to refactor or revert if same fix fails 3× at same tier.
+- **State:** Append session notes to `openmemory/ui/AGENTS.md`. Never create separate per-task files. Compress old entries when context grows large.
+- **UI bugs:** Use Playwright MCP (`console_messages level:error` → `network_requests` → `snapshot`) before editing source.
+- **Quality gates:** `"strict": true` always; zero `tsc` errors; all tests pass (3 `resolve.test.ts` pre-existing failures excepted); ≥90% coverage on new `runWrite`/write-pipeline code; new/modified API routes verified <200 ms p95.
 
-- **No confirmation loops.** Proceed from analysis to implementation to verification without asking for approval unless a decision is irreversible (e.g., deleting data, publishing to npm).
-- **Infer intent.** When a request is ambiguous, pick the most reasonable interpretation, execute it, and state what you chose.
-- **Execution order:** Analyse ? Plan ? Implement ? Verify ? Report. Never stop at the plan step.
+## Testing Patterns
 
-### Execution Protocol
+- **`jest.clearAllMocks()` does NOT clear `mockReturnValueOnce`/`mockResolvedValueOnce` queues.** Use `mockFn.mockReset()` in `beforeEach` of describe blocks that add Once values.
+- **`makeRecord({ key: intValue })`** wraps integers as `{ low, high, toNumber }`. Use string values when asserting `toEqual` on deserialized rows.
+- **`buildPageResponse`** returns `{ items, total, page, size, pages }` — always `body.items`, never `body.results`.
+- **`globalThis.__memgraphDriver`** persists across `jest.resetModules()`. Set to `null` in `beforeEach` when testing driver creation.
 
-Before touching code on any non-trivial task:
-
-1. **Dependency map** � identify which files/routes/DB queries are affected and whether changes can be made in parallel.
-2. **Risk classification** � label each change: `Technical | Performance | Security | Data`. Anything touching Memgraph writes or auth is `Security`; anything touching `runWrite` in bulk is `Data`.
-3. **Quality checkpoints** � define the verification step for each change (type-check, unit test, manual curl, Playwright run).
-4. **Rollback point** � if the change touches the write pipeline or schema, note the last known-good state so a revert path is clear.
-
-### Error Recovery
-
-Apply this pipeline in order � stop when the issue is resolved:
-
-| Tier | Check | Command |
-|------|-------|---------|
-| 1 | Type errors | `pnpm exec tsc --noEmit` (run from `openmemory/ui/`) |
-| 2 | Unit tests | `pnpm --filter my-v0-project test` |
-| 3 | Build | `pnpm --filter my-v0-project build` |
-| 4 | E2E | `pnpm --filter my-v0-project test:pw` (requires dev server + Memgraph) |
-
-**Error classification ? default action:**
-
-- `Syntax / Type` � fix in place, re-run tier 1.
-- `Build` � check Next.js dynamic-params pattern (`await params`), then check tsup entry in `mem0-ts`.
-- `Dependency` � check pnpm hoisting; run `pnpm why <pkg>` to trace the resolution.
-- `Configuration` � check env vars above; missing `OPENAI_API_KEY` surfaces as a 500 on `/api/v1/memories`.
-- `Test_Failure` � confirm it is not one of the 3 known pre-existing failures in `tests/unit/entities/resolve.test.ts` before investigating.
-- `Runtime / Integration` � use Playwright MCP to inspect live DOM, console errors, and network requests before editing code.
-
-**3-attempt limit:** If a fix fails 3 times at the same tier, escalate: quick-patch ? targeted refactor ? revert to last known-good state. Do not repeat the same change.
-
-### State Management (AGENTS.md)
-
-- **Single source of truth:** Keep `openmemory/ui/AGENTS.md` (create if absent) as the running project log.
-- **Record after every non-trivial task:** what changed, which files, what verification was run, any follow-up items.
-- **Never create separate per-task markdown files** — append all updates directly to `AGENTS.md`.
-- **Pattern capture:** When a bug reveals a systemic issue (e.g., bare `MATCH (m:Memory �)` without User anchor), document it in `AGENTS.md` under `## Patterns` so it is not repeated.
-- **Token-limit recovery:** If context grows large, compress prior entries into a summary block in `AGENTS.md` before continuing.
-
-### Runtime Monitoring with Playwright MCP
-
-When the dev server is running (`pnpm --filter my-v0-project dev`), use Playwright MCP tools to debug live issues **before** editing source:
-
-1. `mcp_playwright_browser_navigate` � load the relevant page.
-2. `mcp_playwright_browser_console_messages` (`level: "error"`) � capture JS errors.
-3. `mcp_playwright_browser_network_requests` � inspect failed API calls and response bodies.
-4. `mcp_playwright_browser_snapshot` � analyse DOM / accessibility tree state.
-5. `mcp_playwright_browser_evaluate` � query in-page state (Redux store, component props, `performance` entries).
-
-**Prioritise live inspection over guessing.** Capture console + network before reading source when investigating a UI bug.
-
-**Core Web Vitals baseline** (record deltas in `AGENTS.md` after significant UI changes):
-LCP < 2.5 s � CLS < 0.1 � INP < 200 ms � measure via `performance.getEntriesByType('navigation')` in `mcp_playwright_browser_evaluate`.
-
-### Quality Gates & Enforcement
-
-Every change must clear all applicable gates before being considered done. Do not mark a task complete if any gate below is failing.
-
-#### TypeScript
-
-| Gate | Rule | Command |
-|------|------|---------|
-| Strict mode | `tsconfig.json` must have `"strict": true` � never weaken it | `pnpm exec tsc --noEmit` |
-| Zero errors | `tsc --noEmit` must exit 0 with no errors or suppressions | `pnpm exec tsc --noEmit` |
-| No `any` escape hatches | `@ts-ignore` / `@ts-expect-error` require an inline comment explaining why; `@ts-nocheck` is banned | grep before commit |
-| API contract coverage | Every exported function, route handler, and `runRead`/`runWrite` call site must have explicit input/output types � no implicit `any` on API boundaries | `pnpm exec tsc --noEmit` |
-
-#### Testing
-
-| Gate | Rule | Command |
-|------|------|---------|
-| All tests pass | Zero failures; the 3 known pre-existing failures in `tests/unit/entities/resolve.test.ts` are the only permitted exceptions | `pnpm --filter my-v0-project test` |
-| Coverage = 90 % | Line + branch coverage must be = 90 % on new code paths; check with `--coverage` | `pnpm --filter my-v0-project test --coverage` |
-| Performance benchmarks | API routes added or modified must be manually verified < 200 ms p95 under normal load; record result in `AGENTS.md` | Playwright network tab or `mcp_playwright_browser_network_requests` |
-
-#### Enforcement
-
-- **Block on gate failure.** Do not move to the next implementation step if TypeScript errors or test failures exist.
-- **No coverage exemptions** on code that touches `runWrite`, the write pipeline (`lib/memory/write.ts`), or auth logic � these are `Security / Data` risk and require full branch coverage.
-- **Regressions are bugs.** If a change causes a previously passing test to fail, fix the regression before proceeding rather than skipping or deleting the test.
+---
+<!-- removed: verbose Execution Protocol, Error Recovery table, Playwright monitoring section, Quality Gates tables — see AGENTS.md Patterns for full details -->

@@ -34,7 +34,9 @@ describe("processEntityExtraction", () => {
     mockRunRead
       .mockResolvedValueOnce([{ status: null, content: "Alice works at Acme Corp" }])
       // Second runRead: get userId
-      .mockResolvedValueOnce([{ userId: "user-1" }]);
+      .mockResolvedValueOnce([{ userId: "user-1" }])
+      // Third runRead: Tier 1 batch normalizedName lookup (ENTITY-01) — no existing entities
+      .mockResolvedValueOnce([]);
     mockRunWrite.mockResolvedValue([]);
     mockExtract.mockResolvedValue([
       { name: "Alice", type: "PERSON", description: "A person" },
@@ -96,5 +98,47 @@ describe("processEntityExtraction", () => {
 
     await expect(processEntityExtraction("mem-missing")).resolves.toBeUndefined();
     expect(mockExtract).not.toHaveBeenCalled();
+  });
+
+  it("WORKER_06 (ENTITY-01): Tier 1 batch hit → resolveEntity NOT called for matched entity", async () => {
+    // Tier 1 returns a cached entity for 'alice'
+    mockRunRead
+      .mockResolvedValueOnce([{ status: null, content: "Alice joined the team" }])
+      .mockResolvedValueOnce([{ userId: "user-1" }])
+      // Tier 1 UNWIND batch: Alice already exists
+      .mockResolvedValueOnce([{ normName: "alice", entityId: "entity-alice-cached" }]);
+    mockRunWrite.mockResolvedValue([]);
+    mockExtract.mockResolvedValue([
+      { name: "Alice", type: "PERSON", description: "Team member" },
+    ]);
+    mockLink.mockResolvedValue(undefined);
+
+    await processEntityExtraction("mem-200");
+
+    // resolveEntity must NOT be called — Tier 1 cache handled it
+    expect(mockResolve).not.toHaveBeenCalled();
+    // link must be called with the cached entity id
+    expect(mockLink).toHaveBeenCalledWith("mem-200", "entity-alice-cached");
+  });
+
+  it("WORKER_07 (ENTITY-01): Tier 1 batch miss → resolveEntity called as fallback", async () => {
+    // Tier 1 returns nothing (entity not yet in DB)
+    mockRunRead
+      .mockResolvedValueOnce([{ status: null, content: "Bob at NewCo" }])
+      .mockResolvedValueOnce([{ userId: "user-1" }])
+      // Tier 1 UNWIND batch: no match for 'bob'
+      .mockResolvedValueOnce([]);
+    mockRunWrite.mockResolvedValue([]);
+    mockExtract.mockResolvedValue([
+      { name: "Bob", type: "PERSON", description: "New hire" },
+    ]);
+    mockResolve.mockResolvedValueOnce("entity-bob-new");
+    mockLink.mockResolvedValue(undefined);
+
+    await processEntityExtraction("mem-201");
+
+    // resolveEntity MUST be called for the miss
+    expect(mockResolve).toHaveBeenCalledTimes(1);
+    expect(mockLink).toHaveBeenCalledWith("mem-201", "entity-bob-new");
   });
 });

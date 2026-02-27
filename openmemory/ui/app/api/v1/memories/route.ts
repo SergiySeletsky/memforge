@@ -54,13 +54,23 @@ export async function GET(request: NextRequest) {
       const allIds = searchResults.map((r) => r.id);
       const pageIds = allIds.slice((page - 1) * size, page * size);
 
+      // Batch-fetch categories for all page results in one round-trip (API-01)
+      const allCatRowsSearch = await runRead<{ id: string; name: string }>(
+        `UNWIND $ids AS memId
+         MATCH (m:Memory {id: memId})-[:HAS_CATEGORY]->(c:Category)
+         RETURN memId AS id, c.name AS name`,
+        { ids: pageIds }
+      ).catch(() => []);
+      const catsByMemorySearch = new Map<string, string[]>();
+      for (const row of allCatRowsSearch) {
+        const list = catsByMemorySearch.get(row.id) ?? [];
+        list.push(row.name);
+        catsByMemorySearch.set(row.id, list);
+      }
+
       const items: MemoryResponse[] = [];
       for (const result of searchResults.filter((r) => pageIds.includes(r.id))) {
-        const catRows = await runRead<{ name: string }>(
-          `MATCH (m:Memory {id: $id})-[:HAS_CATEGORY]->(c:Category) RETURN c.name AS name`,
-          { id: result.id }
-        ).catch(() => []);
-        const catNames = catRows.map((c) => c.name);
+        const catNames = catsByMemorySearch.get(result.id) ?? [];
 
         if (categoriesParam) {
           const catList = categoriesParam.split(",").map((c) => c.trim());
@@ -91,14 +101,26 @@ export async function GET(request: NextRequest) {
       asOf,
     });
 
+    // Batch-fetch categories for all memories in one round-trip (API-01)
+    const memIds = memories.map((m) => m.id);
+    const allCatRowsList = memIds.length > 0
+      ? await runRead<{ id: string; name: string }>(
+          `UNWIND $ids AS memId
+           MATCH (m:Memory {id: memId})-[:HAS_CATEGORY]->(c:Category)
+           RETURN memId AS id, c.name AS name`,
+          { ids: memIds }
+        ).catch(() => [])
+      : [];
+    const catsByMemoryList = new Map<string, string[]>();
+    for (const row of allCatRowsList) {
+      const list = catsByMemoryList.get(row.id) ?? [];
+      list.push(row.name);
+      catsByMemoryList.set(row.id, list);
+    }
+
     const items: MemoryResponse[] = [];
     for (const mem of memories) {
-      const catRows = await runRead<{ name: string }>(
-        `MATCH (m:Memory {id: $id})-[:HAS_CATEGORY]->(c:Category) RETURN c.name AS name`,
-        { id: mem.id }
-      ).catch(() => []);
-
-      const catNames = catRows.map((c) => c.name);
+      const catNames = catsByMemoryList.get(mem.id) ?? [];
 
       if (categoriesParam) {
         const catList = categoriesParam.split(",").map((c) => c.trim());

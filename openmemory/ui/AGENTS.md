@@ -1,2254 +1,282 @@
 # OpenMemory UI — Agent Log
 
-## Summary
+---
 
-Running project log for all agent sessions. Most recent entries at bottom.
+## Completed Sessions (Summary)
 
-## Session 8 — Agent-Native LTM MCP Evaluation (V7)
+| Sessions | Topic | Outcome |
+|----------|-------|---------|
+| 1 — Workspace Setup | Windows pnpm config, shamefully-hoist, onlyBuiltDependencies | `shamefully-hoist=true` in `.npmrc`; `onnxruntime-node` + `onnxruntime-web` in workspace-root `pnpm.onlyBuiltDependencies` |
+| 2 — KuzuDB Spike | Embedded graph DB as Memgraph alternative | KuzuDB 2× faster inserts, Memgraph 6× faster search; KEPT Memgraph. Patterns: `getAll()` is async; `FLOAT[]` not `FLOAT[n]`; `JSON_EXTRACT` needs extension; inline vector literals (no `$q` param in similarity) |
+| 3 — Full Pipeline Benchmark | End-to-end benchmark vs OSS baseline | Azure embedding sep=0.492, nomic sep=0.289; Azure retained as primary |
+| 4–5 — MCP Eval V3 + Gap Fixes | 9.0/10 eval + fix BM25/dedup/delete-cascade | Entity identity = `(userId, toLower(name))` only; dedup threshold 0.85→0.75; RRF confidence threshold 0.02 |
+| 8–9 (first) — V4/V5 Evals | `confident` field, alias resolution | Added `confident: boolean`; alias dedup resolved; `text_search.search_all()` not `search()` |
+| 10–11 — MCP API surface | `add_memory→add_memories`; list_memories absorption | `list_memories` collapsed into `search_memory` browse mode (no query = paginated list) |
+| 12 (first) — Entity Fragmentation | Duplicate entity nodes for same real-world entity | `normalizeName()` (lowercase + strip whitespace/punctuation); `normalizedName` stored in DB; semantic dedup via `entity_vectors` cosine threshold 0.88 + LLM confirmation; open ontology (UPPER_SNAKE_CASE types) |
+| 13 (first) — Embedding Abstraction | Provider router: Azure vs nomic | `lib/embeddings/openai.ts` = provider router; startup health check in `instrumentation.ts`; silent null embeddings fixed |
+| 14–21 — Embedding Benchmarks | 12+ providers across 6 test suites (Qwen3, mxbai, Arctic, Gemma, Stella, intelli-embed) | **Production**: azure (sep=0.492). **Best offline**: arctic-l-v2 (sep=0.469, 570 MB, 9.3 ms). **Best memory-holistic local**: mxbai (sep=0.432). **Selected provider**: `intelli-embed-v3` (custom arctic-embed-l-v2 finetune, 1024-dim INT8 ONNX, ~11 ms, beats Azure on dedup + negation safety). All providers fail dedupGap>0.15; BM25 negation gate required. |
+| 22–25 — MTEB + Negation Safety | Submitted intelli-embed-v3; negation gate; Azure dedup threshold | BM25 lexical negation pre-filter added to dedup pipeline; Azure dedup threshold lowered to 0.55 |
+| 12 (second) — Reliability Hardening | Tantivy writer killed + connection errors | `withRetry()`, `globalThis.__memgraphDriver`, `EXTRACTION_DRAIN_TIMEOUT_MS=3000`, atomic writes (2 queries not 4), `runRead` for read-only lookups |
+| 13 (second) — Architectural Audit | 34 findings across all layers | Fixed `invalidAt: null` Cypher null literal bug; 7 HIGH findings documented in AUDIT_REPORT_SESSION13.md |
+| 14 (second) — Lint Analysis | 100+ lint warnings | Resolved import/type issues; no new patterns |
+| 15 — Frontend + API Audit | 22 new findings; 8 HIGH (frontend) | Stale closure, namespace violation, N+1 categorize documented in AUDIT_REPORT_SESSION15.md |
 
-### Objective
-- Re-run evaluation from a fresh-agent perspective (no internals assumed), generate many software-engineering scenarios per MCP memory tool, and assess usefulness/clarity for context-window scaling.
-- Persist key findings as long-term memories so future agents can retrieve them.
-
-### Changes Made
-- Created `EVALUATION-REPORT-V7-AGENT-NATIVE-LTM-MCP.md` at workspace root.
-- Covered all 11 MCP memory tools with practical scenarios, strengths, weaknesses, and failure-mode notes.
-- Added multi-tool workflows for onboarding, incident response, and refactor safety.
-- Stored four durable memory entries summarizing core findings and recommendations.
-
-### Stored Memory Entries
-- Session result: V7 evaluation completed with full tool coverage and scalability framing.
-- Best onboarding sequence: list_memories(category=architecture) -> search_memory -> get_related_memories -> get_memory_map.
-- Highest context-density tools: get_related_memories and get_memory_map.
-- Improvement recommendation: batch write/relation APIs for high-volume ingestion.
-
-### Verification
-- Report file created successfully.
-- Memory persistence calls succeeded (4/4 add_memory events).
+**Test baseline after completed sessions:** 315 tests, 45 suites, 0 failures
 
 ---
 
-## Session 9 — Live Agent Run Evaluation (V8 Empirical)
+## Patterns & Architectural Decisions
 
-### Objective
-Act as a new senior engineer on an unknown e-commerce platform. Use MCP memory tools live (no mocked data). Ingest real engineering knowledge, create entity relationships, run retrieval queries, measure outcomes, write data-driven evaluation report.
+### Cypher / Memgraph
 
-### Work Done
-- **Phase 1 — Ingestion:** Stored 20 engineering memories across 15 domains (architecture ADRs, incidents, migrations, security, observability, CI/CD, naming conventions, feature flags, compliance, code ownership, infra, service contracts).
-- **Phase 2 — Graph construction:** Created 12 explicit entity relationships via `create_memory_relation` (USES, IMPLEMENTS, INTEGRATES_WITH, CONSUMES, SECURES, OWNS, READS_FROM, WRITES_TO, DEPENDS_ON).
-- **Phase 3 — Retrieval evaluation:** Ran 12 queries across `search_memory`, `search_memory_entities`, `get_memory_entity`, `get_memory_map`. Scored each result.
-- **Phase 4 — Report:** Created `EVALUATION-REPORT-V8-LIVE-AGENT-RUN.md` at workspace root with full per-tool scorecard, empirical query results, end-to-end workflows, and top-6 improvement issues.
-
-### Key Quantitative Results
-- Memories stored: 20/20 success
-- Relationships created: 12/12 success
-- Top-1 recall accuracy: 6/8 = 75%
-- Top-3 recall accuracy: 8/8 = 100%
-- Overall system score: 7.8/10
-
-### Critical Bugs Found
-1. **Entity fragmentation:** Same entity (e.g., "OrderService") exists as 3–4 separate nodes with different type labels (PRODUCT, CONCEPT, OTHER). `get_memory_entity` on any single node returns only a fraction of relevant memories. Root cause: entity extraction runs per-memory with no global deduplication pass.
-2. **Relation-to-entity path broken:** `create_memory_relation` resolves entity names to new nodes; these differ from auto-extracted entity nodes. Explicit relation `PaymentService USES Redis` is invisible when browsing the auto-extracted Redis entity.
-3. **No vector embeddings in test config:** All `vector_rank` fields null. Score spread 0.0154–0.0164 — unusable as relevance signal. Semantic/paraphrase queries fail.
-4. **Silent contradiction:** Two conflicting LaunchDarkly flag naming memories coexisted without any conflict flag in search results.
-
-### Files Modified
-- Created: `EVALUATION-REPORT-V8-LIVE-AGENT-RUN.md`
-- Updated: `openmemory/ui/AGENTS.md` (this file)
-
-### Memory Entries Stored
-- 1 summary memory with all V8 findings and scores persisted to LTM.
-
----
-
-## Session 10 — Batch write: add_memory → add_memories
-
-### Objective
-Redesign `add_memory` to `add_memories` accepting one or many memory strings in a single call, eliminating the N round-trip penalty for batch ingestion.
-
-### Changes Made
-- **`lib/mcp/server.ts`**: Renamed tool from `add_memory` → `add_memories`. Schema `content` field changed from `z.string()` to `z.union([z.string(), z.array(z.string())])`. Handler normalises to `string[]`, fans out via `Promise.all`, each item independently deduped+written. Per-item failures are isolated — failed items return `{ event: "ERROR", error: "..." }` without aborting the batch. Entity extraction remains fire-and-forget per item. Empty array short-circuits immediately.
-- **`tests/unit/mcp/tools.test.ts`**: Updated describe block and all 4 existing `add_memory` test cases to use `add_memories`. Added 4 new batch test cases: `MCP_ADD_05` (array happy path), `MCP_ADD_06` (per-item error isolation), `MCP_ADD_07` (empty array), `MCP_ADD_08` (mixed ADD + SKIP + SUPERSEDE in one call).
-
-### Verification
-- `pnpm exec tsc --noEmit`: only known pre-existing `.next/types` error — 0 new errors.
-- `pnpm test --testPathPattern="mcp/tools"`: **45/45 passed** (was 41, +4 batch tests).
-
----
-
-## Session 11 — list_memories absorbed into search_memory (browse mode)
-
-### Objective
-Eliminate `list_memories` as a separate tool by making `query` optional on `search_memory`. No-query call → chronological browse with pagination; query present → existing hybrid search path.
-
-### Changes Made
-- **`lib/mcp/server.ts`**: `query` in `searchMemorySchema` changed from `z.string()` to `z.string().optional()`. Added `offset: z.number().optional()`. Updated `search_memory` handler: when `!query || query.trim() === ""`, routes to browse path (Cypher ORDER BY createdAt DESC + SKIP/LIMIT + total count); otherwise existing hybrid search path. Removed `list_memories` tool registration and `listMemoriesSchema`. Updated file header comment (10 → 9 tools).
-- **`tests/unit/mcp/tools.test.ts`**: Replaced `list_memories` describe block with `search_memory (browse mode)` covering `MCP_SM_BROWSE_01`–`06`. Coverage comment updated.
-
-### Browse vs Search response shapes
-- **Browse** (no query): `{ total, offset, limit, results: [{ id, memory, created_at, updated_at, categories }] }`
-- **Search** (query present): `{ confident, message, results: [{ id, memory, relevance_score, raw_score, text_rank, vector_rank, created_at, categories }] }`
-
-### Verification
-- `pnpm exec tsc --noEmit`: only known pre-existing `.next/types` error.
-- `pnpm test --testPathPattern="mcp/tools"`: **46/46 passed** (was 45, +1 browse-06 extra case).
-
----
-
-## Session 1 — Workspace Configuration & App Fix
-
-### Changes Made
-
-**Root workspace (`c:\Users\Selet\source\repos\mem0\mem0`)**
-- `package.json`: Added `"type": "module"`, `scripts` (lint, format, format:check), and shared `devDependencies`: `@eslint/js@^9`, `@types/node@^22`, `dotenv@^16`, `eslint@^9`, `jest@^29.7.0`, `prettier@^3.5.2`, `ts-jest@^29.4.6`, `typescript@5.5.4`, `typescript-eslint@^8`
-- `.npmrc` (NEW): `shamefully-hoist=true` — required for Next.js on Windows with pnpm workspaces (see Patterns section)
-- `prettier.config.js` (NEW): Shared Prettier config (`printWidth:100`, double quotes, trailing commas, LF line endings)
-- `.prettierignore` (NEW): Excludes `node_modules`, `dist`, `.next`, lock files, coverage
-- `eslint.config.js` (NEW): ESLint 9 flat config with `typescript-eslint@8`; warns on `no-explicit-any`; test file overrides
-
-**`mem0-ts/`**
-- `package.json`: Removed hoisted devDeps; added `@types/sqlite3@^3.1.11`
-- `tsconfig.json`: Excluded `src/community` (has own tsconfig + unresolvable peers)
-- `src/oss/src/types/index.ts`: Added `timeout?: number`, `maxRetries?: number` to `LLMConfig`
-- `src/oss/src/reranker/index.ts`: Split `export type` from value exports (isolatedModules compliance)
-- `src/client/mem0.ts`: 3x `@ts-ignore` → `@ts-expect-error` with inline justification
-- `src/client/telemetry.ts`: Removed `@ts-nocheck`; typed `additionalData` param; annotated empty catch
-- `src/oss/src/llms/langchain.ts`: Removed empty `else {}`; removed useless re-throw try/catch
-- `src/oss/src/memory/index.ts`: Annotated empty telemetry catch
-- `src/oss/src/reranker/cohere.ts`: `eslint-disable-next-line` for lazy `require()`
-- `src/oss/src/vector_stores/redis.ts`: `Number(x) ?? 0` → `Number(x) || 0` (NaN is falsy, not null)
-- `src/oss/src/utils/telemetry.ts`: Annotated empty env-check catch
-
-**`openmemory/ui/`**
-- `package.json`: Removed hoisted devDeps; downgraded `@jest/globals`, `@types/jest`, `jest-environment-node` from `@30` → `@29` (to match hoisted `jest@29`)
-- `tsconfig.json`: Added `jest.config.ts` and `jest.e2e.config.ts` to `exclude` (prevents `@types/jest@29` ambient declaration conflict)
-- `components/Navbar.tsx`: Added `if (!pathname) return false` guard in `isActive()` (fixes null crash during SSR hydration)
-- `next.config.mjs`: Added `serverExternalPackages: ["neo4j-driver"]` and custom webpack externals for `neo4j-driver`
-
-**`.github/copilot-instructions.md`**
-- Appended Core Execution Framework: Autonomy Mandate, Execution Protocol, Error Recovery (4-tier table), State Management (AGENTS.md), Playwright MCP monitoring
-- Appended Quality Gates: TypeScript gates, Testing gates (≥90% coverage), Enforcement rules
-
-### Verification Run
-- `pnpm exec tsc --noEmit` in `mem0-ts`: **0 errors**
-- ESLint on `mem0-ts`: **0 errors**, 263 warnings (all in test files, intentional `no-explicit-any`)
-- `openmemory/ui` TS: **1 pre-existing error** (`entities/[entityId]/route.ts` — params not Promise, known Next.js 15 issue)
-- App at `http://localhost:3000`: **loads correctly**, all API routes return 200
-
----
-
-## Patterns
-
-### Windows + pnpm workspace: webpack drive-letter casing bug
-
-**Symptom:** `invariant expected layout router to be mounted` crash on every page load; webpack console warnings: `WARNING: multiple modules with names that only differ in casing`.
-
-**Root Cause:** pnpm's symlink-based virtual store (`node_modules/.pnpm/...`) produces inconsistent drive-letter casing on Windows (e.g. `C:\...` vs `c:\...`). Webpack on case-insensitive Windows FS treats these as two different modules, so Next.js internal modules (`layout-router.js`, `react-dom`, etc.) get bundled twice, causing the React invariant failure.
-
-**Fix:** Add `shamefully-hoist=true` to `.npmrc` at workspace root. This makes pnpm use a flat `node_modules` layout (like npm/yarn), eliminating the symlinks that trigger the casing ambiguity. Run `pnpm install` (with `CI=true` to skip TTY prompts if needed) after adding `.npmrc`.
-
-**Anti-fix:** `config.resolve.symlinks = false` in `next.config.mjs` actually made this **worse** (increased casing warnings) by preventing webpack from normalising resolved paths back through symlinks. Revert this if applied.
-
-### Memgraph Cypher: always anchor to User node
-
-Never query `Memory` directly:
 ```cypher
--- ❌ WRONG
-MATCH (m:Memory {id: $memId})
--- ✅ CORRECT
+-- ALWAYS anchor to User node (Spec 09 namespace isolation)
 MATCH (u:User {userId: $userId})-[:HAS_MEMORY]->(m:Memory {id: $memId})
+-- NEVER: MATCH (m:Memory {id: $memId})   ← violates namespace isolation
+
+-- UNWIND batch replaces N+1 sequential queries
+UNWIND $ids AS memId
+MATCH (m:Memory {id: memId})-[:HAS_CATEGORY]->(c:Category)
+RETURN memId AS id, c.name AS name
+
+-- Conditional param building — never pass undefined to runRead/runWrite
+const params: Record<string, unknown> = { userId, offset, limit };
+if (category) params.category = category;   // ✅
+// NOT: { userId, category: undefined }     // ❌ Memgraph logs unused-param warning
+
+-- Null literals rejected in CREATE
+CREATE (m:Memory { content: $content })     -- ✅  omit invalidAt — absent = semantically null
+CREATE (m:Memory { invalidAt: null })       -- ❌  Memgraph rejects null literal in property map
 ```
 
-### SKIP/LIMIT in Memgraph
+**SKIP/LIMIT**: Always use `wrapSkipLimit()` helper — auto-rewrites to `toInteger()` for Memgraph compatibility. Never bare integer literals.
 
-Always use `toInteger()` or parameterised values via `wrapSkipLimit()`. Literal integers in SKIP/LIMIT fail in Memgraph.
+**`runTransaction()`**: For 2+ writes that must be atomic — single Bolt write transaction with auto-rollback.
 
-### pnpm onlyBuiltDependencies
+**Bi-temporal reads**: Live memories filter `WHERE m.invalidAt IS NULL`. Edits call `supersedeMemory()`. Never in-place UPDATE for user-visible changes.
 
-The `pnpm.onlyBuiltDependencies` field only takes effect at the **workspace root** `package.json`. Remove from individual package `package.json` files and consolidate at root.
+**Entity merge key**: `(userId, normalizeName(name))` only — type is metadata, not identity. `normalizeName()` = lowercase + strip `[\s\-_./\\]+`.
 
----
+**Cypher string concat precedence**: Parenthesize string concat in `STARTS WITH` checks — Memgraph operator precedence differs from Neo4j.
 
-## Known Pre-existing Issues (do not investigate)
+**`text_search.search_all()`**: Use instead of `text_search.search()` for BM25 full-text queries.
 
-- `tests/unit/entities/resolve.test.ts`: 3 failing unit tests — pre-existing, do not fix
-- `app/api/v1/entities/[entityId]/route.ts`: TS2344 error on route params type — pre-existing Next.js 15 known issue, tracked upstream
-
----
-
-## Session 2 — KuzuVectorStore Implementation & Benchmark
-
-### Objective
-
-Implement `KuzuVectorStore` for fully in-process/embedded vector storage (previously only `KuzuHistoryManager` existed), and benchmark KuzuDB vs Memgraph for insert + search latency.
-
-### Files Changed
-
-| File | Change |
-|------|--------|
-| `mem0-ts/src/oss/src/vector_stores/kuzu.ts` | **NEW** — `KuzuVectorStore` full implementation |
-| `mem0-ts/src/oss/src/storage/kuzu.d.ts` | Fixed `getAll()` return type: `Promise<...>` (was incorrectly sync) |
-| `mem0-ts/src/oss/src/storage/KuzuHistoryManager.ts` | Added `await` to `result.getAll()` (was missing) |
-| `mem0-ts/src/oss/src/vector_stores/memgraph.ts` | Fixed `init()` DDL and `search()` `k` integer type |
-| `mem0-ts/src/oss/src/utils/factory.ts` | Added `KuzuVectorStore` import + `"kuzu"` case |
-| `mem0-ts/src/oss/src/index.ts` | Added `export * from "./vector_stores/kuzu"` |
-| `mem0-ts/bench/benchmark.cjs` | Pure CJS comparative benchmark |
-
-### KuzuDB 0.9.0 Critical Quirks (from runtime probing)
-
-1. **`getAll()` is async** — `.d.ts` stub says sync; actual runtime returns `Promise<...>`. Always `await result.getAll()`.
-2. **`FLOAT[n]` ≠ `FLOAT[]`** — `FLOAT[n]` is ARRAY type; `FLOAT[]` is LIST type. `array_cosine_similarity` requires both args to be LIST — use `FLOAT[]` in DDL.
-3. **Parameterized query vector `$q` is rejected** — Memgraph-like `$q` params fail: "ARRAY_COSINE_SIMILARITY requires argument type to be FLOAT[] or DOUBLE[]" because KuzuDB can't infer type of JS array param as FLOAT[] LIST. Must inline the vector as float literals.
-4. **`toInteger()` doesn't exist in KuzuDB Cypher** — parameterized LIMIT works fine though.
-
-### KuzuVectorStore Implementation Pattern
+### Driver / Connection
 
 ```typescript
-// DDL: FLOAT[] (LIST), not FLOAT[n] (ARRAY)
-`CREATE NODE TABLE IF NOT EXISTS MemVector (
-   id      STRING, vec  FLOAT[], payload STRING, PRIMARY KEY (id)
-)`
+// globalThis singleton survives Next.js HMR (lib/db/memgraph.ts)
+if (!globalThis.__memgraphDriver) globalThis.__memgraphDriver = neo4j.driver(url, auth, opts);
 
-// vecLiteral helper — required; $q param is rejected by similarity functions
-private vecLiteral(v: number[]): string {
-  return "[" + v.map((x) => x.toFixed(8)).join(",") + "]";
-}
-
-// search: MUST use conn.query() with inline literal, NOT prepared statement
-const vecLit = this.vecLiteral(query);
-const result = await this.conn.query(
-  `MATCH (v:MemVector)
-
-  ---
-
-  ## Session 12 — Full Verification Run (App + SDK)
-
-  ### Objective
-  - Execute a full validation pass across the monorepo surfaces touched recently: app lint/tests/build and SDK typecheck/tests/build.
-
-  ### Verification Commands Run
-  - `openmemory/ui`: `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm test:pw`
-  - `mem0-ts`: `pnpm exec tsc --noEmit`, `pnpm test -- --coverage --coverageReporters=text --coverageReporters=json-summary`, `pnpm build`
-
-  ### Results
-  - `openmemory/ui` lint: **PASS** (no ESLint warnings/errors; Next.js plugin warning still printed)
-  - `openmemory/ui` Jest (`pnpm test`): **FAIL**
-    - Summary: **10 failed / 35 passed suites**, **57 failed / 267 passed tests**
-    - Predominant failures: 500 responses in API-backed e2e tests and one timeout in clusters setup
-  - `openmemory/ui` build: **FAIL**
-    - Next prerender failure on `/404` due to `<Html>` imported outside `pages/_document`
-  - `openmemory/ui` Playwright (`pnpm test:pw`): **FAIL**
-    - Summary: **8 failed / 14 passed**
-    - Predominant failures: API endpoints returning 500 and missing Settings heading assertion
-  - `mem0-ts` typecheck: **PASS** (0 errors)
-  - `mem0-ts` tests with coverage: **PASS**
-    - Summary: **17 passed / 17 total suites**, **291 passed / 291 tests**
-    - Coverage (overall): **Statements 61.95% | Branch 47.69% | Functions 54.28% | Lines 62.69%**
-  - `mem0-ts` build: **FAIL**
-    - Blocked by Prettier check in build script (`Code style issues found in 114 files`)
-
-  ### Files Modified
-  - Updated only: `openmemory/ui/AGENTS.md` (this entry)
-
-  ### Notes
-  - No application or SDK source code changes were made in this session; this was a verification-only run.
-   WITH v, array_cosine_similarity(v.vec, ${vecLit}) AS score
-   ORDER BY score DESC LIMIT ${fetchLimit}
-   RETURN v.id AS id, v.payload AS payload, score`
-);
-const rows = await result.getAll();  // getAll() is async — must await
+// withRetry wraps all runRead/runWrite — exponential backoff, 3 attempts, 300 ms base
+// Transient errors trigger retry + driver invalidation:
+// "Connection was closed by server", "Tantivy error", "index writer was killed",
+// "ServiceUnavailable", "ECONNREFUSED", "ECONNRESET"
 ```
 
----
+Pool config: `maxConnectionPoolSize: 25`, `connectionAcquisitionTimeout: 10_000`.
+Memgraph 3.x: `encrypted: false` in neo4j driver options.
+`--experimental-enabled=text-search` required for BM25/Tantivy.
 
-## Session 13 — Entity extraction stabilization + full e2e green
+### Write Pipeline
 
-### Objective
-- Continue fixing failing tests and runtime issues from Session 12, with focus on remaining `04-entities` e2e failures and build instability.
+**Tantivy write contention**: Fire-and-forget `processEntityExtraction` from item N running when item N+1 writes → concurrent Tantivy writers panic. Fix: drain prior extraction promise before each write (`Promise.race([prev, timeout(3000)])`).
 
-### Changes Made
-- **`lib/entities/extract.ts`**
-  - Made LLM extraction fail-open when LLM client/config is unavailable by moving `getLLMClient()` into guarded `try` flow.
-  - Added entity output normalization (`name/type/description` sanitization) before downstream resolution.
-  - Added deterministic heuristic fallback extraction from memory text (capitalized token groups + dedup + stopword filter) so entities can still be produced without LLM credentials.
-- **`app/api/v1/memories/reextract/route.ts`**
-  - Added deterministic execution path for tests: collects extraction jobs and `await Promise.allSettled(jobs)` when `NODE_ENV === "test"` or `OPENMEMORY_SYNC_ENTITY_EXTRACTION === "1"`.
-- **`lib/entities/resolve.ts`**
-  - Fixed PERSON alias Cypher match expression precedence in Memgraph by parenthesizing string concatenation in `STARTS WITH` checks:
-    - `toLower(e.name) STARTS WITH (toLower($name) + ' ')`
-    - `toLower($name) STARTS WITH (toLower(e.name) + ' ')`
-  - This resolved worker failures (`Invalid types: bool and string for '+'`) that prevented entity node creation.
+**Worker Tier 1 batch**: Single UNWIND resolves all `normalizedName` exact matches before falling back to full `resolveEntity()` per entity.
 
-### Root Causes Confirmed
-- Entity pipeline failures were caused by Memgraph Cypher precedence in PERSON alias matching, which surfaced once fallback extraction produced PERSON entities.
-- Broad e2e 500 failures in one run were infra-related (Memgraph container not running), not code regressions.
-- Build `<Html>` prerender failures were environment-driven during local runs with non-production env context; build succeeds under clean `NODE_ENV=production`.
-- Additional local build blocker (`Cannot find module './impl'`) came from corrupted workspace `next` package in pnpm store; fixed via reinstall.
+**Tags vs Categories**:
+- `tags` = exact caller-controlled identifiers (`string[]` on Memory node); passed by caller; scoped retrieval
+- `categories` = semantic LLM-assigned labels (`:Category` nodes via `[:HAS_CATEGORY]`); assigned async
 
-### Verification
-- `npx jest --config jest.e2e.config.ts tests/e2e/04-entities.test.ts --runInBand`: **PASS (5/5)**
-- `pnpm test:e2e` (with Memgraph running): **PASS (11/11 suites, 73/73 tests)**
-- `pnpm build` (with clean env: `NODE_ENV=production`, no `NEXT_RUNTIME`): **PASS**
-- Dependency repair command executed: `pnpm install --force` at workspace root.
-
-### Patterns
-- Memgraph Cypher operator precedence can misparse `STARTS WITH <expr> + ' '` as boolean/string arithmetic unless concatenation is explicitly parenthesized.
-- For e2e reliability on async fire-and-forget pipelines, provide a test-mode synchronous path behind env guard rather than relying on background completion timing.
-
-
-### Memgraph Fixes
-
-- **Vector index DDL syntax**: `CREATE VECTOR INDEX name ON :Label(prop) WITH CONFIG {"dimension": N, "capacity": 100000, "metric": "cos"}` (NOT `OPTIONS {size:}`)
-- **`k` must be explicit integer**: pass `neo4j.int(k)` to `vector_search.search()` — JS number fails with "must be of type INTEGER"
-
-### Benchmark Results (dim=128, 200 inserts, 20×10 batch, 200 searches, k=10)
-
-| Operation | KuzuDB (in-process) | Memgraph (TCP bolt, HNSW) | Winner |
-|-----------|---------------------|---------------------------|--------|
-| insert single mean | 0.47 ms | 0.88 ms | KuzuDB 1.9× |
-| insert single p95 | 0.64 ms | 1.12 ms | KuzuDB |
-| insert batch/10 mean | 0.45 ms | 0.92 ms | KuzuDB 2.0× |
-| search k=10 mean | 5.47 ms | **0.86 ms** | **Memgraph 6.4×** |
-| search k=10 p95 | 6.43 ms | 1.15 ms | Memgraph |
-| search ops/s | 183 | 1165 | Memgraph |
-
-**Key takeaways:**
-- KuzuDB inserts are ~2× faster (no TCP roundtrip — in-process)
-- Memgraph search is **6.4× faster** because it uses HNSW index (sub-linear), KuzuDB does brute-force linear scan
-- As collection size grows, KuzuDB search degrades linearly while Memgraph HNSW stays O(log n)
-- Use KuzuDB for small (< 10K vectors) fully-offline scenarios; use Memgraph for production/large collections
-
-### Verification
-
-- `pnpm exec tsc --noEmit`: **0 errors**
-- KuzuDB benchmark ran successfully (dim=128, all three phases complete)
-- Memgraph benchmark ran successfully (confirmed MAGE available in Docker container `loving_jennings`)
-
-### Usage (KuzuVectorStore)
-
+**Global drain budget** (`add_memories` handler):
 ```typescript
-const memory = new Memory({
-  vectorStore: {
-    provider: "kuzu",
-    config: { dbPath: "./my_vectors", dimension: 1536, metric: "cos" },
-  },
-  historyStore: {
-    provider: "kuzu",
-    config: { dbPath: "./my_history" },
-  },
-});
+const batchDrainDeadline = Date.now() + BATCH_DRAIN_BUDGET_MS; // 12_000
+const drainMs = Math.min(PER_ITEM_DRAIN_MAX_MS, batchDrainDeadline - Date.now());
 ```
 
----
+**`classifyIntent` fail-open**: Wrap in its own try/catch with STORE fallback — outer write-pipeline catch converts errors to ERROR events (memory lost).
 
-## Session 3 — Full Pipeline Benchmark (add + search + graph)
+**`normalizeName` in worker.ts**: Defined locally, not imported from `resolve.ts`. jest auto-mock returns `undefined` for imported functions; define pure utilities locally to avoid mock interference.
 
-### Objective
+### LLM / Embedding
 
-Benchmark the full `Memory.add()` + `Memory.search()` pipeline with both storage backends — not just raw vector ops but including the dedup search, the actual vector writes, and the history/graph writes. Also fixed a correctness bug in `KuzuVectorStore` where userId filtering was post-processed in JS over a full table scan.
+- `getLLMClient()` from `lib/ai/client.ts` — singleton, auto-selects Azure or OpenAI. Model: `LLM_AZURE_DEPLOYMENT ?? OPENMEMORY_CATEGORIZATION_MODEL ?? "gpt-4o-mini"`.
+- `embed()` from `lib/embeddings/intelli.ts` — default: `serhiiseletskyi/intelli-embed-v3` (1024-dim INT8 ONNX, ~11 ms, no API key). Falls back to Azure when `EMBEDDING_AZURE_*` env is set.
+- **Mock LLM in tests**: mock `@/lib/ai/client`, NOT the `openai` package — Azure credential check fires before `new OpenAI()`.
+- **`embedDescriptionAsync`** is fire-and-forget + calls `runWrite`. Use `mockResolvedValueOnce` (not `mockResolvedValue`) so second embed call uses the default rejected state.
+- Fire-and-forget calls: always `.catch(e => console.warn(...))` — never throw into write pipeline.
+- Provider switch = re-index: drop + recreate Memgraph vector indexes on dimension change.
 
-### Files Changed
+### Testing
 
-| File | Change |
-|------|--------|
-| `mem0-ts/bench/full-pipeline.cjs` | **NEW** — full pipeline benchmark (mock embed + mock LLM) |
-| `mem0-ts/src/oss/src/vector_stores/kuzu.ts` | Added `user_id` column + Cypher pre-filter for multi-user correctness/perf |
+**`jest.clearAllMocks()` does NOT clear `specificReturnValues` queue** (`mockReturnValueOnce` / `mockResolvedValueOnce`). Use `mockFn.mockReset()` in `beforeEach` of new describe blocks to drain orphaned Once values from prior blocks.
 
-### Full Pipeline Architecture (what `Memory.add()` actually does)
+**`makeRecord()` integer wrapping**: `makeRecord({ key: intValue })` → `{ low, high, toNumber }`. Use string values when asserting `toEqual` on deserialized rows.
 
-```
-add():
-  1. embed input          ← OpenAI ~80ms   (MOCKED in benchmark)
-  2. llm.extractFacts     ← OpenAI ~600ms  (MOCKED)
-  3. for each fact:
-     a. embed fact        ← OpenAI ~80ms   (MOCKED)
-     b. vectorSearch      ← REAL (dedup lookup, ×2 for 2 facts)
-  4. llm.updateDecision   ← OpenAI ~600ms  (MOCKED)
-  5. for each ADD/UPDATE action:
-     a. vectorInsert      ← REAL
-     b. historyWrite      ← REAL (graph write)
+**`buildPageResponse` shape**: Returns `{ items, total, page, size, pages }`. Always use `body.items`, NOT `body.results`.
 
-search():
-  1. embed query          ← OpenAI ~80ms   (MOCKED)
-  2. vectorSearch         ← REAL
-```
+**`globalThis` test isolation**: Set `globalThis.__memgraphDriver = null` in `beforeEach` when testing driver creation — globalThis persists across `jest.resetModules()`.
 
-### Full Pipeline Benchmark Results (dim=128, 150 adds, 150 searches, k=10)
+**Generic type args on `require()`**: TS2347 — annotate the result variable instead of `<T>` on the require call.
 
-**add() phase breakdown:**
+### Infrastructure
 
-| Phase | KuzuDB p50 | Memgraph p50 | Winner |
-|-------|-----------|--------------|--------|
-| vectorSearch (dedup ×2) | 8.89 ms | 2.34 ms | Memgraph **3.8×** |
-| vectorInsert (per action) | 2.10 ms | 2.22 ms | KuzuDB **1.1×** ≈ tie |
-| historyWrite (graph) | 1.52 ms | 1.82 ms | KuzuDB **1.2×** ≈ tie |
-| **total add() [storage]** | **13.15 ms** | **8.44 ms** | **Memgraph 1.6×** |
-
-**search() (storage only):**
-
-| | KuzuDB | Memgraph | Winner |
-|--|--------|----------|--------|
-| p50 | 5.44 ms | 1.20 ms | Memgraph **4.5×** |
-| p95 | 16.19 ms | 2.22 ms | Memgraph **7.3×** |
-
-**Real-world projection (with actual OpenAI):**
-- OpenAI subtotal: ~80ms embed + ~600ms extractFacts + ~600ms updateDecision = **~1,280ms**
-- Total add() p50: KuzuDB ~1,293ms vs Memgraph ~1,288ms → **<1% difference**
-- OpenAI dominates storage → backend choice doesn't change total add() latency significantly
-- Total search() p50: KuzuDB ~85ms vs Memgraph ~81ms → 5% difference (embed dominates both)
-
-**Key takeaway:** The biggest raw difference is in vectorSearch during dedup (Memgraph HNSW vs KuzuDB brute-force). With OpenAI in the loop, this difference becomes insignificant. **Choose backend for operational reasons** (persistence, graph queries, scalability) not raw latency.
-
-### KuzuVectorStore Bug Fixed: userId pre-filtering
-
-**Problem:** `KuzuVectorStore.search()` was doing a full table scan over ALL vectors (all users), then post-filtering in JS. On a multi-user collection this means:
-- Results could be wrong (wrong user's vectors could dominate the top-k before filtering)  
-- Performance degrades O(total_vectors), not O(vectors_for_this_user)
-
-**Fix:** Added dedicated `user_id STRING` column to `MemVector` table. Cypher WHERE pre-filter runs before cosine computation:
-```cypher
-MATCH (v:MemVector)
-WHERE v.user_id = 'alice'     -- ← now a real column, not JSON parse
-WITH v, array_cosine_similarity(v.vec, [...]) AS score
-ORDER BY score DESC LIMIT 10
-```
-Note: `JSON_EXTRACT()` doesn't exist in KuzuDB 0.9 (requires separate JSON extension install).
-
-### KuzuDB quirk added: JSON_EXTRACT unavailable
-
-Add to the existing KuzuDB quirks list:
-5. `JSON_EXTRACT()` requires the JSON extension (`INSTALL JSON; LOAD EXTENSION JSON;`) — NOT available by default. Store filterable fields as dedicated columns instead.
+- Windows + pnpm: `shamefully-hoist=true` in `.npmrc` — prevents webpack drive-letter casing bug.
+- `pnpm.onlyBuiltDependencies` only takes effect in workspace root `package.json`.
+- ESM packages in Next.js: add to both `serverExternalPackages` and webpack `externals`.
+- Schema init: `instrumentation.ts` → `initSchema()` on server start (idempotent). No manual migration.
+- RRF confidence threshold 0.02 = above single-arm `1/(K+1)` where K=60 (~0.016).
+- BM25 is essential for short-query→long-memory separation; pure vector search insufficient.
+- Negation safety: dense cosine cannot distinguish negations (negGap ≈ 0 for all models); use BM25 lexical pre-filter before cosine dedup commits.
 
 ---
 
-## Session 4 — MCP Tool Evaluation v3 (Agent-Native SE Memory)
-
-### Objective
-
-Third comprehensive evaluation of the 10-tool MCP interface. Acting as a naive SE agent with zero server internals knowledge, evaluated 24 scenarios across 7 groups to determine whether the tools constitute production-ready "agent-native long-term memory" for software engineering workflows.
-
-### Full Report
-
-See `EVALUATION-REPORT-V3.md` in this directory for the complete report (300+ lines).
-
-### Key Results
-
-- **24 scenarios tested**, 19 excellent, 2 good, 5 partial, 0 failures
-- **Overall score: 9.0/10** — production-ready with 3 gaps
-- **10 tools is the correct count** — no merges needed, no tools missing
-
-### Critical Gaps Found
-
-| Gap | Severity | Root Cause | Fix |
-|-----|----------|-----------|-----|
-| Vector search can't answer reasoning queries ("why did we reject Clerk?") | HIGH | BM25 inactive (Memgraph flag not applied) | Restart Memgraph with `--experimental-enabled=text-search` |
-| Entity type inconsistency fragments knowledge (ADR-001 exists as both OTHER and CONCEPT) | MEDIUM | LLM entity extraction assigns types by context; entity merge uses name+type | Merge entities on toLower(name) only, ignoring type |
-| `search_memory_entities` too literal (CONTAINS match) | MEDIUM | toLower(e.name) CONTAINS $query — substring, not semantic | Add vector search on Entity descriptions, or update description to set expectations |
-
-### Scenarios Executed
-
-Groups: A (Architecture Decisions ×4), B (Codebase Knowledge ×3), C (Debugging Breadcrumbs ×4), D (Team & Project ×4), E (Dependency & Migration ×3), F (Cross-Tool Workflows ×6: impact analysis, tech radar, date filter, update, onboarding, traceability), G (Knowledge Lifecycle ×2: delete entity, delete+recreate relation)
-
-### Memories & Relations Created
-
-- 10 memories added (ADR-001, ADR-002, MERGE pattern, module boundaries, BUG-2026-021, PERF-2026-003, team roster, Sprint 14, MCP SDK upgrade, env config cheat sheet)
-- 6 relationships created (DECIDED_ON, REJECTED, 2×CAUSED_BY, 2×OWNS)
-- 1 memory updated (Sprint 14 → mid-sprint update via bi-temporal supersede)
-- 1 entity deleted (Clerk — silently lost REJECTED relationship)
-- 1 relationship deleted + re-created (ADR-001 DECIDED_ON NextAuth.js v5)
-
-### Tool Interaction Patterns Identified
-
-```
-1. Store + Structure:     add_memory → create_memory_relation
-2. Search → Drill-down:   search_memory → search_memory_entities → get_memory_entity
-3. Onboarding:            list_memories → search_memory → get_memory_entity
-4. Update + Verify:       search_memory → update_memory → search_memory
-5. Impact Analysis:       search_memory_entities → get_memory_map → get_memory_entity
-```
-
-### Context Window Savings Measured
-
-| Workflow | Without Tools | With Tools | Savings |
-|----------|--------------|-----------|---------|
-| Project onboarding | 500K+ tokens | ~6K tokens | >99% |
-| "Who owns write pipeline?" | Manual search | ~750 tokens | >99% |
-| Bug investigation | Git/Slack history | ~400 tokens | >99% |
-| Sprint review | All PRs/commits | ~1K tokens | >99% |
-
-### Verification
-
-- All 10 MCP tools exercised via live server calls
-- 0 tool errors across 24 scenarios
-- 39 test suites, 195 tests still passing
-- tsc clean (pre-existing `.next/types` error only)
-
----
-
-## Session 5 — Fix Evaluation Gaps (BM25, Entity Dedup, Entity Search, MCP Polish)
-
-### Objective
-
-Fix all 3 critical gaps and 3 minor issues surfaced in Session 4's evaluation.
-
-### Changes Made
-
-#### P0: BM25 Text Search — FIXED ✅
-- **Root cause**: Memgraph container was running without `--experimental-enabled=text-search` flag; also `text_search.search()` requires Tantivy field prefix (`data.content:term`) which was not being passed.
-- **Fix 1**: Recreated Memgraph container with `--storage-properties-on-edges=true --experimental-enabled=text-search`, named volume `memgraph_data`.
-- **Fix 2**: `lib/search/text.ts` — changed `text_search.search()` → `text_search.search_all()` which searches all indexed text properties without field prefix.
-- **Verified**: `text_rank: 1` now appears in search results; RRF score doubled from 0.0164 → 0.0328.
-
-#### P1: Entity Type Dedup — FIXED ✅
-- **Root cause**: `resolveEntity()` merged on `(userId, name, type)` — same entity with different types (e.g. "ADR-001" as CONCEPT vs OTHER) created separate nodes.
-- **Fix**: Rewrote `lib/entities/resolve.ts` — matches on `toLower(name) + userId` only (type ignored in merge key). Added `TYPE_PRIORITY` ranking: PERSON > ORGANIZATION > LOCATION > PRODUCT > CONCEPT > OTHER; `isMoreSpecific()` helper upgrades type when warranted, description updated only if longer. Tests updated in `tests/unit/entities/resolve.test.ts`.
-
-#### P1: Semantic Entity Search — FIXED ✅
-- **Root cause**: `search_memory_entities` used only `CONTAINS` substring matching — conceptual queries like "database framework SDK" returned no results.
-- **Fix**: Dual-arm search in `lib/mcp/server.ts`:
-  - Arm 1: Existing CONTAINS substring match on `toLower(e.name)` / `toLower(e.description)`
-  - Arm 2 (best-effort): Embeds query via `embed()`, runs `vector.similarity.cosine(e.descriptionEmbedding, $embedding)` with threshold > 0.3
-  - Results merged with dedup by entity ID, capped at limit.
-- **Dependency**: Added `descriptionEmbedding` computation in `resolveEntity()` — fire-and-forget embedded description stored on Entity nodes via `embedDescriptionAsync()`.
-
-#### P1: delete_entity Cascade Report — FIXED ✅
-- **Root cause**: `delete_memory_entity` returned only "Removed entity X" — agent had no idea how many relationships were silently lost.
-- **Fix**: Before DETACH DELETE, counts MENTIONS and RELATED_TO edges. Response now includes `{ entity, mentionEdgesRemoved, relationshipsRemoved, message }`.
-
-#### P2: list_memories Pagination + Categories — FIXED ✅
-- **Fix**: Added `limit` (default 50, max 200) and `offset` params to `listMemoriesSchema`. Handler runs separate count query for `total`, joins `OPTIONAL MATCH (m)-[:HAS_CATEGORY]->(c:Category)`, returns `{ total, offset, limit, memories: [{...categories}] }`.
-
-#### P2: get_memory_map Edge Limiting — FIXED ✅
-- **Fix**: Added `max_edges` param (default 100, max 500) to `getMemoryMapSchema`. Handler truncates combined edge array, adds `{ truncated: true, totalEdges, returnedEdges }` when capped.
-
-### Files Modified
-
-| File | Change |
-|------|--------|
-| `lib/search/text.ts` | `search()` → `search_all()` |
-| `lib/entities/resolve.ts` | Complete rewrite: name-only match, type priority, descriptionEmbedding |
-| `tests/unit/entities/resolve.test.ts` | Updated all 4 tests for new resolve behavior |
-| `lib/mcp/server.ts` | 6 changes: embed import, listMemoriesSchema, searchMemoryEntitiesSchema, getMemoryMapSchema, list_memories/search_memory_entities/delete_memory_entity/get_memory_map handlers |
-
-### Patterns
-
-- **Tantivy text search quirk**: `text_search.search()` in Memgraph requires field-qualified queries (`data.content:term`). Use `text_search.search_all()` to avoid this when searching across all indexed text properties.
-- **Fire-and-forget embedding**: Entity `descriptionEmbedding` is computed asynchronously during entity resolution. Failures are logged but never block the write pipeline.
-- **Entity merge key**: Entity identity is `(userId, toLower(name))` only — type is metadata, not identity.
-
-### Verification
-
-- `tsc --noEmit`: clean (pre-existing `.next/types` error only)
-- 39 suites, 195 tests passing
-- BM25 verified live via MCP `search_memory` call
-
----
-
-## Session 8 — V4 Evaluation Fixes + Tests
-
-Addresses all 4 critical findings from EVALUATION-REPORT-V4.md.
-
-### Fix 1: Unify entity resolution (Finding 1 — entity fragmentation)
-
-**Problem:** `create_memory_relation` used inline `ensureEntity()` that didn't share logic with `resolveEntity()` (no TYPE_PRIORITY, no description upgrade, no description embedding).
-
-**Change:** Replaced 20-line `ensureEntity()` closure in `lib/mcp/server.ts` with direct calls to `resolveEntity()` from `lib/entities/resolve.ts`.
-
-| File | Change |
-|------|--------|
-| `lib/mcp/server.ts` | Added `import { resolveEntity }`, replaced `ensureEntity()` in `create_memory_relation` |
-
-### Fix 2: Name alias resolution (Finding 2 — name aliasing)
-
-**Problem:** "Alice" and "Alice Chen" created separate entities because `resolveEntity()` only matched exact names.
-
-**Change:** Added Step 2b in `resolveEntity()`: if no exact match AND type is PERSON, do a prefix alias query. If the new name is longer, upgrade the stored name.
-
-| File | Change |
-|------|--------|
-| `lib/entities/resolve.ts` | Added `runRead` import, `let existing`, alias branch with `STARTS WITH` query, name upgrade logic |
-
-### Fix 3: Relevance threshold (Finding 3 — no confidence indicator)
-
-**Problem:** `search_memory` returned low-scoring vector-only matches with no way for callers to judge relevance.
-
-**Change:** Added `confident` field to `search_memory` response. Logic: `confident = hasAnyTextHit || maxScore > 0.02` (threshold is above single-arm RRF score of 1/(60+1) ≈ 0.0164).
-
-| File | Change |
-|------|--------|
-| `lib/mcp/server.ts` | Added `confident` field computation in search_memory handler |
-
-### Fix 4: Semantic dedup threshold (Finding 4 — paraphrases not caught)
-
-**Problem:** Default cosine threshold of 0.85 missed obvious paraphrases. Stage 2 LLM verification prevents false positives.
-
-**Change:** Lowered default threshold from 0.85 to 0.75 in `getDedupConfig()`.
-
-| File | Change |
-|------|--------|
-| `lib/config/helpers.ts` | Default dedup threshold 0.85 → 0.75 (both normal + fallback paths) |
-
-### Tests Added
-
-| File | Tests | Description |
-|------|-------|-------------|
-| `tests/unit/mcp/tools.test.ts` | MCP_REL_01-04 rewritten, MCP_SM_05-08 added | Relation tests use `resolveEntity` mock; 4 new search confidence threshold tests |
-| `tests/unit/entities/resolve.test.ts` | RESOLVE_08-11 added, RESOLVE_01-04 updated | Alias matching for PERSON, name upgrade, CONCEPT skips alias, exact match skips alias |
-| `tests/unit/dedup/dedup-orchestrator.test.ts` | ORCH_06-08 added | 0.75 threshold passed, paraphrase at 0.80 caught, custom threshold respected |
-| `tests/unit/config/dedup-config.test.ts` | DEDUP_CFG_01-03 (new file) | Default 0.75, config override, fallback on failure |
-
-### Patterns
-
-- **Alias queries use `runRead`**: The PERSON name prefix alias lookup is read-only. Using `runRead` keeps it separate from `runWrite` mocks in tests and is semantically correct.
-- **RRF confidence threshold**: `0.02` is chosen to be above the single-arm maximum RRF score `1/(K+1)` where K=60. Any result scoring above 0.02 has signal from at least 2 ranking sources.
-- **Dedup Stage 1 vs Stage 2**: Lowering the cosine threshold increases Stage 1 candidates but Stage 2 (LLM `verifyDuplicate`) prevents false-positive merges. This is the designed safety net.
-
-### Verification
-
-- `tsc --noEmit`: clean (only pre-existing `.next/types` and test MCP SDK import errors)
-- 30 unit/baseline/security suites, 175 tests — all passing
-- e2e tests require running Memgraph + dev server (not available in this environment)
-
-
----
-
-## Session 9 � V5 Agent-Native Evaluation (External Agent Perspective)
-
-Full end-to-end evaluation from external agent perspective. Agent adopted "software architect
-joining project with zero internal knowledge" persona. All memories, queries, and findings are
-from the agent-as-user point of view.
-
-### Infrastructure Fixes
-
-| File | Change |
-|------|--------|
-| lib/db/memgraph.ts | Added encrypted: false to neo4j driver config � fixes ECONNRESET with Memgraph 3.x |
-| scripts/init-schema.mjs | New standalone schema initialization script |
-
-### Memory Corpus Stored (26 memories via mcp_openmemory_add_memory)
-
-26 memories across 12 SE domains: Architecture ADRs (3), Security (3), Incidents (2),
-Performance (2), Infra/CI (4), Conventions (3), Observability (3), Integrations (4), DX/Compliance (2).
-Entity relationships stored: PaymentService USES EventStore, BillingService SUBSCRIBES_TO EventStore.
-
-### Retrieval Evaluation (15 Queries)
-
-- Top-1 accuracy: **10/15 = 67%** (BM25-only � sk-placeholder key, no embeddings)
-- All 5 failures: semantic synonym/paraphrase mismatches (all fixable with real embeddings)
-- Entity search: broken � search_memory_entities returns { nodes: [] } without LLM key
-- Score discrimination: all RRF scores 0.0154�0.0164 (rank-position, not relevance-based)
-- False confidence: absent-topic queries return best-effort matches without any "not found" signal
-
-### Key Findings
-
-1. dd_memory production-ready: 26/26 writes succeeded, auto-categorization works
-2. BM25-only: 67% top-1; projected ~90% with real OpenAI embeddings
-3. confident field in API response JSON but NOT surfaced in MCP tool output text
-4. Entity tools silently broken in BM25-only mode
-5. No normalized relevance score � agents cannot gate on match quality
-6. update_memory missing � new add creates duplicates instead of superseding
-
-### Deliverable
-
-openmemory/EVALUATION-REPORT-V5.md � overall score **7.4/10**
-
-### Patterns
-
-- Memgraph 3.x plain Bolt requires encrypted: false in neo4j driver options
-- BM25 reliable for exact tech terms; semantic queries always need vector embeddings
-- Silent entity degradation: entity tools return empty (not error) when LLM unavailable
-
- # #   S e s s i o n   6      A z u r e   A I   F o u n d r y   M i g r a t i o n   &   M C P   T o o l   E n h a n c e m e n t s 
- 
- # # #   O b j e c t i v e 
- 1 .   M i g r a t e   t h e   e n t i r e   c o d e b a s e   t o   e x c l u s i v e l y   u s e   A z u r e   A I   F o u n d r y   f o r   L L M   a n d   E m b e d d i n g s ,   r e m o v i n g   a l l   s t a n d a r d   O p e n A I   f a l l b a c k s . 
- 2 .   I m p l e m e n t   p r i o r i t y   r e c o m m e n d a t i o n s   f r o m   t h e   V 5   E v a l u a t i o n   r e p o r t   t o   i m p r o v e   t h e   M C P   s e r v e r ' s   a g e n t   e r g o n o m i c s . 
- 
- # # #   C h a n g e s   M a d e 
- 
- * * A z u r e   A I   F o u n d r y   M i g r a t i o n * * 
- -   \ l i b / a i / c l i e n t . t s \ :   R e m o v e d   \ O P E N A I _ A P I _ K E Y \   f a l l b a c k .   N o w   s t r i c t l y   r e q u i r e s   \ L L M _ A Z U R E _ O P E N A I _ A P I _ K E Y \   a n d   \ L L M _ A Z U R E _ E N D P O I N T \ .   T h r o w s   a n   e x p l i c i t   e r r o r   i f   m i s s i n g . 
- -   \ l i b / e m b e d d i n g s / o p e n a i . t s \ :   R e m o v e d   \ O P E N A I _ A P I _ K E Y \   f a l l b a c k .   N o w   s t r i c t l y   r e q u i r e s   \ E M B E D D I N G _ A Z U R E _ O P E N A I _ A P I _ K E Y \   a n d   \ E M B E D D I N G _ A Z U R E _ E N D P O I N T \ .   T h r o w s   a n   e x p l i c i t   e r r o r   i f   m i s s i n g . 
- -   \ . e n v . e x a m p l e \   &   \ . e n v . t e s t \ :   U p d a t e d   t e m p l a t e s   t o   r e f l e c t   t h e   n e w   m a n d a t o r y   A z u r e   c r e d e n t i a l s . 
- 
- * * M C P   S e r v e r   E n h a n c e m e n t s   ( \ l i b / m c p / s e r v e r . t s \ ) * * 
- -   * * S c o r e   N o r m a l i z a t i o n * * :   U p d a t e d   \ s e a r c h _ m e m o r y \   t o   r e t u r n   a   0 - 1   \ 
- e l e v a n c e _ s c o r e \   ( n o r m a l i z e d   f r o m   R R F )   a l o n g s i d e   t h e   \ 
- a w _ s c o r e \ . 
- -   * * C o n f i d e n c e   M e s s a g i n g * * :   A d d e d   a   h u m a n - r e a d a b l e   \ m e s s a g e \   t o   \ s e a r c h _ m e m o r y \   o u t p u t   e x p l a i n i n g   t h e   \ c o n f i d e n t \   f l a g   ( e . g . ,   \ 
- 
- H i g h 
- 
- c o n f i d e n c e : 
- 
- E x a c t 
- 
- k e y w o r d 
- 
- m a t c h e s 
- 
- f o u n d \ ) . 
- -   * * C a t e g o r y   F i l t e r i n g * * :   A d d e d   a   \ c a t e g o r y \   f i l t e r   t o   \ l i s t _ m e m o r i e s \   ( i m p l e m e n t e d   v i a   C y p h e r   \ M A T C H   ( m ) - [ : H A S _ C A T E G O R Y ] - > ( c : C a t e g o r y )   W H E R E   t o L o w e r ( c . n a m e )   =   t o L o w e r ( ) \ ) . 
- -   * * E n t i t y   G r a p h   T r a v e r s a l * * :   A d d e d   a   n e w   \ g e t _ r e l a t e d _ m e m o r i e s \   t o o l   t h a t   t a k e s   a n   \ e n t i t y _ n a m e \ ,   r e s o l v e s   i t ,   a n d   r e t u r n s   t h e   e n t i t y   d e t a i l s ,   a l l   m e m o r i e s   m e n t i o n i n g   i t ,   a n d   i t s   e x p l i c i t   r e l a t i o n s h i p s   t o   o t h e r   e n t i t i e s . 
- 
- * * T e s t i n g   ( \ 	 e s t s / u n i t / m c p / t o o l s . t e s t . t s \ ) * * 
- -   U p d a t e d   \ s e a r c h _ m e m o r y \   t e s t s   t o   v e r i f y   \ 
- e l e v a n c e _ s c o r e \   a n d   \ m e s s a g e \   f i e l d s . 
- -   A d d e d   \ M C P _ L I S T _ 0 5 \   t o   v e r i f y   t h e   \ c a t e g o r y \   f i l t e r   i n   \ l i s t _ m e m o r i e s \ . 
- -   A d d e d   \ M C P _ R E L M E M _ 0 1 \   t o   v e r i f y   t h e   n e w   \ g e t _ r e l a t e d _ m e m o r i e s \   t o o l . 
- -   F i x e d   a   s y n t a x   e r r o r   a n d   a   t y p e   e r r o r   ( \ E x t r a c t e d E n t i t y \   r e q u i r i n g   a   \ d e s c r i p t i o n \ )   i n t r o d u c e d   d u r i n g   t h e   t e s t   u p d a t e s . 
- 
- # # #   V e r i f i c a t i o n   R u n 
- -   \ p n p m   e x e c   t s c   - - n o E m i t \ :   * * 0   e r r o r s * *   ( e x c l u d i n g   t h e   k n o w n   N e x t . j s   1 5   r o u t e   p a r a m   e r r o r ) . 
- -   \ p n p m   t e s t   t e s t s / u n i t / m c p / t o o l s . t e s t . t s \ :   * * 4 1 / 4 1   t e s t s   p a s s e d * * . 
- 
- # # #   F o l l o w - u p   I t e m s 
- -   T h e   u n i t   t e s t s   f o r   \ d e d u p / v e r i f y D u p l i c a t e . t e s t . t s \   c u r r e n t l y   f a i l   b e c a u s e   t h e y   r e q u i r e   A z u r e   c r e d e n t i a l s   i n   t h e   e n v i r o n m e n t .   T h e s e   t e s t s   s h o u l d   e i t h e r   b e   m o c k e d   o r   t h e   C I   e n v i r o n m e n t   n e e d s   t o   b e   p r o v i s i o n e d   w i t h   t e s t   A z u r e   c r e d e n t i a l s . 
- 
- 
- 
- # #   S e s s i o n   7      A g e n t - N a t i v e   L o n g - T e r m   M e m o r y   E v a l u a t i o n 
- 
- # # #   O b j e c t i v e 
- E v a l u a t e   t h e   O p e n M e m o r y   M C P   t o o l s   f r o m   t h e   p e r s p e c t i v e   o f   a n   a u t o n o m o u s   s o f t w a r e   e n g i n e e r i n g   a g e n t ,   f o c u s i n g   o n   h o w   t h e s e   t o o l s   s o l v e   t h e   l i m i t e d   c o n t e x t   w i n d o w   p r o b l e m   b y   a c t i n g   a s   a n   i n f i n i t e ,   g r a p h - b a c k e d   e x t e r n a l   m e m o r y . 
- 
- # # #   C h a n g e s   M a d e 
- -   C r e a t e d   \ E V A L U A T I O N - R E P O R T - V 6 - A G E N T - P E R S P E C T I V E . m d \   d e t a i l i n g   s c e n a r i o s ,   u s e   c a s e s ,   a n d   e v a l u a t i o n s   f o r   t h e   M C P   t o o l s . 
- -   D o c u m e n t e d   s p e c i f i c   s o f t w a r e   e n g i n e e r i n g   s c e n a r i o s   f o r   \  d d _ m e m o r y \ ,   \ s e a r c h _ m e m o r y \ ,   \ g e t _ r e l a t e d _ m e m o r i e s \ ,   \ g e t _ m e m o r y _ m a p \ ,   \ c r e a t e _ m e m o r y _ r e l a t i o n \ ,   a n d   \ s e a r c h _ m e m o r y _ e n t i t i e s \ . 
- -   E v a l u a t e d   t h e   c l a r i t y ,   e r g o n o m i c s ,   a n d   u s e f u l n e s s   o f   t h e   t o o l s   f o r   c o n t e x t   w i n d o w   m a n a g e m e n t . 
- -   P r o v i d e d   a c t i o n a b l e   f e e d b a c k   f o r   f u t u r e   i m p r o v e m e n t s   ( e . g . ,   b a t c h   o p e r a t i o n s ,   c o n f i d e n c e   t h r e s h o l d i n g ,   c o d e   s n i p p e t   a t t a c h m e n t s ) . 
- 
- # # #   V e r i f i c a t i o n   R u n 
- -   T h e   e v a l u a t i o n   r e p o r t   w a s   s u c c e s s f u l l y   g e n e r a t e d   a n d   s a v e d   t o   t h e   w o r k s p a c e   r o o t . 
- 
- 
- 
-
-## Session 12  Entity Fragmentation Fix + Open Ontology (Critical Bug)
-
-### Objective
-Fix entity fragmentation (V8 evaluation CRITICAL bug): duplicate entity nodes were
-created for the same real-world entity when the LLM used slightly different name forms
-("OrderService" vs "Order Service") or semantically equivalent terms.
-Also opened the entity type system to allow domain-specific types (SERVICE, DATABASE,
-LIBRARY, etc.) instead of a closed 6-type list.
-
-### Root Causes Identified
-1. Name variation: 	oLower("Order Service") != 	oLower("OrderService") - no whitespace/punctuation normalisation.
-2. Fixed ontology forced imprecise types (CONCEPT/OTHER) which caused secondary confusion.
-3. No semantic dedup for cases where normalisation alone is insufficient.
-
-### Changes Made
-
-#### lib/db/memgraph.ts
-- Added CREATE INDEX ON :Entity(normalizedName) to SCHEMA_STATEMENTS.
-- Added CREATE VECTOR INDEX entity_vectors ON :Entity(descriptionEmbedding) (1536-dim cosine) to SCHEMA_STATEMENTS.
-
-#### lib/entities/prompts.ts
-- Replaced closed type list (PERSON|ORGANIZATION|LOCATION|CONCEPT|PRODUCT|OTHER) with open ontology instruction: LLM now assigns domain-specific types in UPPER_SNAKE_CASE (SERVICE, DATABASE, LIBRARY, FRAMEWORK, PATTERN, TEAM, INCIDENT, API, etc.).
-- Added uildEntityMergePrompt(a, b) function for LLM-based merge confirmation.
-- Added MergeCandidate interface.
-
-#### lib/entities/resolve.ts (major rewrite)
-- Added export function normalizeName(name: string): string � lowercase + strip [\s\-_./\\]+ ? e.g. "Order Service" = "OrderService" = "order-service" all ? "orderservice".
-- Changed Step 2 DB lookup from WHERE toLower(e.name)=toLower() to WHERE e.normalizedName = .
-- Store 
-ormalizedName in CREATE clause.
-- Added Step 2c: semantic dedup via indEntityBySemantic() � uses entity_vectors index, cosine threshold 0.88, confirms via LLM confirmMergeViaLLM() before merging.
-- Both indEntityBySemantic and confirmMergeViaLLM fail open (return null/false) when embed or LLM unavailable.
-- Updated TYPE_PRIORITY: CONCEPT=6, OTHER=99, unknown domain types default to rank 5 (between PRODUCT and CONCEPT).
-- Imported getLLMClient and uildEntityMergePrompt for LLM merge confirmation.
-
-#### tests/unit/entities/extract.test.ts
-- Switched from jest.mock("openai") to jest.mock("@/lib/ai/client") to properly mock getLLMClient() � Azure credential check was throwing before the OpenAI mock could intercept.
-- All 4 EXTRACT tests now pass.
-
-#### tests/unit/entities/resolve.test.ts
-- Updated file header and imports: added mocks for @/lib/embeddings/openai and @/lib/ai/client.
-- eforeEach: mockEmbed.mockRejectedValue(...) as default � ensures semantic dedup fails silently in all existing tests, preserving call counts.
-- Fixed RESOLVE_01: changed expect(lookupCypher).toContain("toLower") ? expect(lookupCypher).toContain("normalizedName").
-- Added RESOLVE_12: normalizedName dedup ("Order Service" == "OrderService").
-- Added RESOLVE_13: semantic dedup � embedding match + LLM confirms merge.
-- Added RESOLVE_14: semantic dedup � LLM rejects merge ? creates new entity.
-- Added RESOLVE_15: embed fails ? graceful fallback ? creates new entity.
-- Added RESOLVE_16: domain-specific type "SERVICE" upgrades "CONCEPT" (open ontology rank 5 < rank 6).
-
-### Patterns Captured
-- embedDescriptionAsync is fire-and-forget and calls 
-unWrite � using mockResolvedValue (not Once) for embed in tests caused an unexpected 5th 
-unWrite call. Fix: use mockResolvedValueOnce so the second embed call falls back to the default rejected state.
-- When extract.ts uses getLLMClient(), tests must mock @/lib/ai/client not the openai package directly, because the Azure credential check fires before any 
-ew OpenAI() construction.
-
-### Verification Run
-- pnpm exec tsc --noEmit: pre-existing .next/types error only (ignorable per spec).
-- pnpm test --testPathPattern="entities": **30/30 tests passed**.
-- pnpm test (full suite): **251/260 passed**; 9 failures are pre-existing Memgraph-connection-refused in 	ests/e2e/06-search.test.ts, 	ests/unit/dedup/verifyDuplicate.test.ts, 	ests/unit/search/rerank.test.ts (require live Memgraph).
-
-### Follow-up Items
-- The entity_vectors index requires Memgraph MAGE to be running. On cold start when the index doesn't exist yet, indEntityBySemantic catches the error gracefully (returns null).
-- Existing entities created before this change have no 
-ormalizedName field � a one-time migration Cypher can be run: MATCH (e:Entity) WHERE e.normalizedName IS NULL SET e.normalizedName = toLower(replace(replace(replace(replace(e.name,' ',''),'-',''),'_',''),'.','')).
-
-## Session 12  Entity Fragmentation Fix + Open Ontology
-
-### Changes Made
-- lib/db/memgraph.ts: Added normalizedName index + entity_vectors vector index to SCHEMA_STATEMENTS
-- lib/entities/prompts.ts: Open ontology (domain types vs closed list) + buildEntityMergePrompt()
-- lib/entities/resolve.ts: normalizeName(), normalizedName stored in DB, semantic dedup via entity_vectors, LLM merge confirmation, updated TYPE_PRIORITY (CONCEPT=6, OTHER=99, domain defaults=5)
-- tests/unit/entities/extract.test.ts: Mock @/lib/ai/client instead of openai directly
-- tests/unit/entities/resolve.test.ts: Added RESOLVE_12-16, fixed RESOLVE_01 toLower->normalizedName assertion
-
-### Patterns
-- embedDescriptionAsync calls runWrite; use mockResolvedValueOnce (not Value) so the async embed later uses rejected default
-- Mock @/lib/ai/client not openai package when code uses getLLMClient() (Azure credential check fires before new OpenAI())
-
-### Verification
-- pnpm test --testPathPattern=entities: 30/30 passed
-- pnpm test full: 251/260 passed; 9 pre-existing Memgraph-connection failures
-
----
-
-## Session 13 � Embedding Provider Abstraction + Benchmark
-
-### Objective
-Fix V8 Issue 2: No vector embeddings in test config (HIGH). Root cause: old `lib/embeddings/openai.ts` threw on missing Azure credentials; all memories stored with `embedding: null`; semantic search returned ~0.0001 cosine similarity spread (random). Implement provider abstraction (Azure + local nomic), add startup health check, benchmark both.
-
-### Changes Made
-
-**New files:**
-- `lib/embeddings/azure.ts` � Azure AI Foundry; 1536-dim text-embedding-3-small; requires EMBEDDING_AZURE_OPENAI_API_KEY + EMBEDDING_AZURE_ENDPOINT
-- `lib/embeddings/nomic.ts` � local CPU via @huggingface/transformers; nomic-embed-text-v1.5-q8 (~120 MB); 768-dim; lazy init; search_document: prefix
-- `scripts/benchmark-embeddings.ts` � 10 positive + 10 negative SW-engineering gold pairs; p50/p95 latency + Sep metric; `pnpm benchmark:embeddings`
-
-**Modified files:**
-- `lib/embeddings/openai.ts` � provider router; EMBEDDING_PROVIDER env selects azure (default) or nomic; all existing imports unchanged
-- `lib/db/memgraph.ts` � getSchemaStatements() + resolveEmbedDim() for dynamic vector index sizing (1536 or 768)
-- `instrumentation.ts` � startup health check via checkEmbeddingHealth(); logs provider/model/dim/latency
-- `next.config.mjs` � @huggingface/transformers + onnxruntime-node in serverExternalPackages + webpack externals
-- `package.json` � added benchmark:embeddings script
-
-**Workspace root package.json:** Added onnxruntime-node to pnpm.onlyBuiltDependencies
-
-### Benchmark Results (2025-01)
-
-| Provider | Model | Dim | p50 | p95 | PosSim | NegSim | Sep | Grade |
-|---|---|---|---|---|---|---|---|---|
-| azure | text-embedding-3-small | 1536 | 81ms | 130ms | 0.633 | 0.142 | **0.492** | GOOD |
-| nomic (doc) | nomic-embed-text-v1.5-q8 | 768 | 7.7ms | 11ms | 0.757 | 0.500 | 0.257 | GOOD |
-| nomic (prefixed) | nomic-embed-text-v1.5-q8 | 768 | 7.6ms | 14ms | 0.662 | 0.373 | 0.289 | GOOD |
-
-**Decision: Keep Azure.** Separation 0.492 vs 0.289 (+70%). Nomic NegSim=0.500 (unrelated pairs score too similarly � false positives). Use nomic only for offline CI.
-
-### Patterns Captured
-- **onnxruntime-node approval**: Add "onnxruntime-node" to pnpm.onlyBuiltDependencies in WORKSPACE ROOT package.json (not openmemory/ui/package.json). Run `pnpm install` from workspace root.
-- **ESM packages in Next.js**: Add to both serverExternalPackages and webpack externals.
-- **Provider switch = re-index**: Drop + recreate Memgraph vector indexes when changing EMBEDDING_PROVIDER (dimension mismatch otherwise).
-- **Silent null embeddings anti-pattern**: Fixed by startup health check � failures now surface immediately.
-
-### Verification
-- `pnpm exec tsc --noEmit`: pre-existing .next/types error only
-- `pnpm test --testPathPattern="unit"`: 149/157 passing; 8 pre-existing failures (verifyDuplicate, rerank)
-- `pnpm benchmark:embeddings`: Azure recommended (sep=0.492 vs nomic 0.289)
-
----
-
-## Session 14+15 � Qwen3-Embedding 4B and 8B INT8 ONNX Benchmark (run6, 2026-02-22)
-
-### Objective
-Extend embedding benchmark to Qwen3-Embedding-4B and 8B. No pre-quantized ONNX available on HuggingFace. Download fp32 ONNX sidecar files and quantize locally.
-
-### Key Technical Issue Resolved
-**onnxruntime 1.23.x Windows bug**: quantize_dynamic with use_external_data_format=True crashes with  xC0000005 (access violation). Root cause: save_and_reload_model_with_shape_infer writes temp files, then tries to reload via onnx.external_data_helper.load_external_data_for_tensor � dereferences invalid pointer for large tensors on Windows.
-**Fix**: Monkey-patch onnxruntime.quantization.onnx_quantizer.save_and_reload_model_with_shape_infer = lambda m: m. Embedded in scripts/download_and_quantize_qwen3_onnx.py.
-
-**@huggingface/transformers pipeline can't load external-data ONNX locally**: Has its own JS-side protobuf 2 GB limit and validation.
-**Fix**: Load via onnxruntime-node C++ backend directly. Bypasses all JS-side limits.
-
-### Files Changed
-- scripts/download_and_quantize_qwen3_onnx.py � monkey-patch embedded, use_external_data_format=True, skip-if-exists guard, stale file cleanup for both .onnx.data and .onnx_data variants
-- scripts/benchmark-embeddings.ts � uildQwen3_4BProvider() and uildQwen3_8BProvider() rewritten to use onnxruntime-node directly + AutoTokenizer, use sentence_embedding output (pre-pooled + L2-norm)
-
-### Model Files on Disk
-- scripts/qwen3-4b-onnx-int8/onnx/model_int8.onnx (3.2 MB stub) + model_int8.onnx.data (3.75 GB)
-- scripts/qwen3-8b-onnx-int8/onnx/model_int8.onnx (3.2 MB stub) + model_int8.onnx.data (7.57 GB)
-- All fp32 source files deleted (~46 GB freed)
-
-### Final Benchmark Results (run6 � all 8 providers)
-
-| Provider | Dim | p50 ms | p95 ms | PosSim | NegSim | Sep | Grade |
-|---|---|---|---|---|---|---|---|---|
-| azure | 1536 | 76.0 | 79.8 | 0.633 | 0.142 | **0.492** | GOOD |
-| qwen3-4b | 2560 | 64.5 | 81.6 | 0.707 | 0.336 | **0.370** | EXCELLENT ? best local |
-| qwen3-emb | 1024 | 16.2 | 23.4 | 0.724 | 0.377 | **0.347** | EXCELLENT |
-| gte-large | 1024 | 31.0 | 40.3 | 0.768 | 0.437 | **0.331** | EXCELLENT |
-| nomic-v2-moe | 768 | 262.7 | 286.4 | 0.467 | 0.150 | **0.317** | FAIR |
-| qwen3-8b | 4096 | 111.3 | 145.7 | 0.785 | 0.486 | **0.299** | GOOD |
-| nomic-v1.5 | 768 | 7.8 | 9.9 | 0.662 | 0.373 | **0.289** | GOOD |
-| bge-m3 | 1024 | 107.1 | 119.9 | 0.789 | 0.556 | **0.232** | GOOD |
-
-### Patterns Captured
-- **Qwen3-8B INT8 worse than 4B**: NegSim=0.486 vs 4B's 0.336. INT8 quantization causes more severe activation outlier collapse in larger models. 4B is the INT8 quality ceiling for Qwen3-Embedding.
-- **onnxruntime-node loads external-data ONNX**: Pass the .onnx stub path; the .onnx.data sidecar is auto-loaded from the same directory. Confirmed working with ort-node 1.21.0.
-- **sentence_embedding output**: Both 4B and 8B export sentence_embedding [batch, dim] � pre-pooled + L2-normalized. Use this directly; do not mean-pool 	oken_embeddings.
-
-### Decision
-Keep EMBEDDING_PROVIDER=azure (sep=0.492). For offline/air-gapped: use qwen3-4b (sep=0.370, 75% of Azure). Qwen3-8B INT8 not recommended.
-
-### Verification
-- 
-px tsc --noEmit: pre-existing .next/types error only (ignorable)
-- Full 8-provider benchmark run6: EXIT 0
-- spec 10: status updated to COMPLETE
-
----
-
-## Session 16 � mxbai-embed-large-v1 Benchmark (run7, 2026-02-22)
-
-### Changes
-- scripts/benchmark-embeddings.ts: added uildMxbaiProvider() (CLS pooling, dtype q8?fp16?fp32); inserted as provider #6; renumbered qwen3-0.6B?7, qwen3-4b?8, qwen3-8b?9
-- specs/10-embedding-providers.md: updated status to run7/9 providers; added mxbai row in results table + vs-Azure table; updated recommendation; added mxbai Note section; updated Decision Log
-
-### Run7 mxbai Result
-| Property | Value |
-|---|---|
-| HF repo | mixedbread-ai/mxbai-embed-large-v1 |
-| Architecture | BERT-large, 1024-dim, CLS pooling |
-| ONNX file | onnx/model_quantized.onnx (337 MB, q8) |
-| Sep | 0.432 (EXCELLENT) � 88% of Azure (0.492) |
-| Latency | 95.5 ms p50, 132.9 ms p95 |
-
-### Patterns Captured
-- **mxbai uses CLS pooling NOT mean pooling**: pooling_mode_cls_token: true in 1_Pooling/config.json. Using mean pooling gives wrong results.
-- **AnglE fine-tuning beats larger general models**: mxbai at 337 MB (BERT-large q8) beats Qwen3-4B (3.75 GB INT8) by 17% Sep (0.432 vs 0.370). Task-specific retrieval fine-tuning > scale.
-- **mxbai ONNX in official repo** (no Xenova mirror needed): mixedbread-ai/mxbai-embed-large-v1 ships onnx/model_quantized.onnx directly; @huggingface/transformers loads it with dtype="q8".
-
-### Decision
-mxbai is new best local model (sep=0.432). Keep EMBEDDING_PROVIDER=azure (sep=0.492, +14% over mxbai). For offline: use mxbai (88% quality, 337 MB, ~96 ms). For ultra-fast offline: qwen3-emb (71% quality, 16 ms).
-
-### Verification
-- pnpm exec tsc --noEmit: pre-existing .next/types error only
-- Full 9-provider benchmark run7: EXIT 0, mxbai sep=0.432 EXCELLENT
-- spec 10: updated to 9 providers, run7
-
----
-
-## Session 17 � Arctic Embed L + L-v2.0 Benchmark (run8, 2026-02-22)
-
-### Changes
-- scripts/benchmark-embeddings.ts: added uildArcticEmbedLProvider() and uildArcticEmbedLV2Provider() (both CLS pooling, q8?fp16?fp32); inserted as providers 7 and 8; renumbered Qwen3-0.6B?9, Qwen3-4B?10, Qwen3-8B?11
-- specs/10-embedding-providers.md: updated status to run8/11 providers; added arctic-l and arctic-l-v2 rows; updated recommendation + vs-Azure table; added arctic Notes; added Model Details sections; updated Decision Log
-
-### Run8 Arctic Results
-| Provider | Sep | Grade | p50 ms | PosSim | NegSim | Notes |
-|---|---|---|---|---|---|---|
-| arctic-l-v2 | 0.469 | GOOD | 12.5 | 0.644 | 0.175 | 95% Azure Sep � new best local |
-| arctic-l | 0.200 | FAIR | 10.2 | 0.873 | 0.673 | No prefix � underestimates quality |
-
-### Patterns Captured
-- **arctic-l-v2 near-matches Azure**: sep=0.469 = 95% of Azure (0.492) at 12.5 ms p50 (6x faster). XLM-RoBERTa-large, 570 MB q8, 8194-token ctx, no prefix needed.
-- **arctic-l v1 requires query prefix**: Without prefix "Represent this sentence for searching relevant passages:", NegSim=0.673 ? FAIR. NegSim collapse is a prefix-artefact. Prefer v2.0 for OpenMemory.
-- **NegSim=0.175 is the key**: arctic-l-v2 achieves the lowest NegSim in the benchmark � meaning SW-engineering negative pairs are cleanly separated even though PosSim is only 0.644.
-
-### Decision
-arctic-l-v2 is now the leading local model (sep=0.469, 95% Azure Sep). Keep EMBEDDING_PROVIDER=azure for max quality (+5%). For offline: use arctic-l-v2 (570 MB, 12.5 ms, 95% quality). mxbai remains best no-prefix BERT alternative (88% quality, 337 MB).
-
-### Verification
-- npx tsc --noEmit: benchmark-embeddings.ts clean; pre-existing .next/types error only
-- Full 11-provider benchmark run8: EXIT 0
-- arctic-l-v2: sep=0.469, arctic-l: sep=0.200
-- spec 10: updated to 11 providers, run8; Arctic Notes + Model Details added
-
----
-
-## Session 18 � EmbeddingGemma-300M Benchmark (run9, 2026-02-22)
-
-### Changes
-- scripts/benchmark-embeddings.ts: added uildEmbeddingGemmaProvider() (AutoModel + AutoTokenizer, external-data ONNX, dtype=q8, 768-dim, sentence_embedding); inserted as provider #9; renumbered Qwen3-0.6B?#10, 4B?#11, 8B?#12
-- specs/10-embedding-providers.md: status updated to run9/12 providers; main results table replaced with 12-provider run9 data; gemma-emb row added to vs-Azure table; recommendation updated; EmbeddingGemma-300M Note section added; onnx-community/embeddinggemma-300m-ONNX added to Model Details; Decision Log entry added; arctic-l-v2 key insight latency updated (12.5ms?9.3ms from run9)
-
-### Run9 gemma-emb Results
-| Provider | Sep | Grade | p50 ms | p95 ms | PosSim | NegSim | Notes |
-|---|---|---|---|---|---|---|---|
-| gemma-emb | 0.422 | EXCELLENT | 94.8 | 106.4 | 0.733 | 0.311 | 86% Azure Sep, 309 MB q8 sidecar |
-
-### Full Run9 Leaderboard
-| Rank | Provider | Sep | Grade | p50 ms |
-|---|---|---|---|---|
-| 1 | azure | 0.492 | GOOD | 74.1 |
-| 2 | arctic-l-v2 | 0.469 | GOOD | 9.3 |
-| 3 | mxbai | 0.432 | EXCELLENT | 9.5 |
-| 4 | **gemma-emb** | **0.422** | **EXCELLENT** | **94.8** |
-| 5 | qwen3-4b | 0.370 | EXCELLENT | 64.9 |
-| 6 | qwen3-emb | 0.347 | EXCELLENT | 13.4 |
-| 7 | gte-large | 0.331 | EXCELLENT | 28.5 |
-| 8 | nomic-v2-moe | 0.317 | FAIR | 246.3 |
-| 9 | qwen3-8b | 0.299 | GOOD | 106.2 |
-| 10 | nomic-v1.5 | 0.289 | GOOD | 5.7 |
-| 11 | bge-m3 | 0.232 | GOOD | 115.8 |
-| 12 | arctic-l | 0.200 | FAIR | 9.6 |
-
-### Patterns Captured
-- **AutoModel not pipeline for gemma-emb**: onnx-community/embeddinggemma-300m-ONNX outputs sentence_embedding directly (pre-pooled + L2-normalized). pipeline() returns hidden states, not embeddings. Must use AutoModel.from_pretrained + AutoTokenizer.from_pretrained.
-- **External-data ONNX is transparent**: All gemma-emb ONNX variants (q8/q4/fp32) have .onnx_data sidecars. @huggingface/transformers AutoModel loads the sidecar automatically � no special handling needed beyond specifying dtype.
-- **No fp16 for gemma-emb**: Model card states "activations do not support fp16 or its derivatives". Use q8 (best quality/speed), q4 (smaller), or fp32 (largest). fp16 causes activation collapse.
-- **Gemma3 decoder achieves EXCELLENT without prefix**: embeddinggemma-300m is a Gemma3 decoder-based encoder (gemma3_text). Despite decoder architecture, it achieves sep=0.422 EXCELLENT without any prefix, outperforming all BERT-style models except mxbai and arctic-l-v2.
-- **Optional prefix improves results further**: query prefix="task: search result | query: " and doc prefix="title: none | text: ". Not used in benchmark for consistency. Real-world Sep with prefix likely higher than 0.422.
-- **MRL at 768-dim**: gemma-emb supports Matryoshka � can truncate to 512/256/128-dim + re-normalize. Useful for edge deployment.
-
-### Decision
-gemma-emb is third-best overall (sep=0.422, 86% Azure Sep). Unique position: EXCELLENT quality at 300M params, 309 MB. However, 94.8 ms p50 is similar to Azure (74.1 ms), making it less compelling vs arctic-l-v2 (9.3 ms, 95% quality) for typical deployments. Best use case: 768-dim is preferred (MRL truncation to 512/256/128), multilingual, or Google model ecosystem. arctic-l-v2 remains top local recommendation.
-
-### Verification
-- npx tsc --noEmit: benchmark-embeddings.ts clean; pre-existing .next/types error only
-- Full 12-provider benchmark run9: EXIT 0
-- gemma-emb: sep=0.422, EXCELLENT, dtype=q8, PosSim=0.733, NegSim=0.311
-- spec 10: updated to 12 providers, run9; gemma-emb Note + Model Details added
-
----
-
-## Session 19 � OpenMemory Test Suites + Stella Providers (run10, 2026-02-22)
-
-### Changes
-- scripts/benchmark-embeddings.ts: Added 6 new test pair arrays (MEMORY_POS_PAIRS, MEMORY_NEG_PAIRS, NEAR_DEDUP_PAIRS, NOT_DEDUP_PAIRS, ASYNC_POS_PAIRS, ASYNC_NEG_PAIRS); extended BenchmarkResult interface (+11 fields); extended runBenchmark() with 3 new test suites; extended printReport() with second OpenMemory metrics table; added buildStella1_5BProvider() (qwen2, Dense_1024 projection) and buildStella400MProvider() (no ONNX); added providers #13 and #14 in main()
-- specs/10-embedding-providers.md: status updated; Benchmark Configuration section extended with test suite table; Run10 results section added (SW-engineering + OpenMemory use-case tables); stella failure notes added; Decision Log updated
-
-### Run10 OpenMemory Use-Case Results
-
-| Provider | memSep | mGrd | dedupGap | asyncSep | aGrd |
-|---|---|---|---|---|---|
-| azure | 0.480 | EXCELLENT | 0.045 | 0.246 | FAIR |
-| mxbai | 0.368 | EXCELLENT | 0.105 | 0.225 | GOOD |
-| nomic-v2-moe | 0.339 | GOOD | 0.089 | 0.212 | FAIR |
-| arctic-l-v2 | 0.341 | EXCELLENT | 0.070 | 0.136 | FAIR |
-| qwen3-emb | 0.378 | EXCELLENT | 0.020 | 0.120 | FAIR |
-| gemma-emb | 0.363 | EXCELLENT | 0.052 | 0.134 | FAIR |
-| qwen3-4b | 0.323 | EXCELLENT | 0.052 | 0.130 | FAIR |
-| gte-large | 0.285 | GOOD | 0.064 | 0.130 | FAIR |
-| nomic-v1.5 | 0.280 | GOOD | 0.056 | 0.138 | FAIR |
-| qwen3-8b | 0.286 | GOOD | 0.049 | 0.118 | FAIR |
-| bge-m3 | 0.210 | GOOD | 0.059 | 0.086 | POOR |
-| arctic-l | 0.088 | POOR | 0.013 | -0.021 | POOR |
-
-### Stella Provider Outcomes
-
-| Provider | Status | Root Cause |
-|---|---|---|
-| stella_en_1.5B_v5 | FAILED | transformers.js pipeline returns undefined for all inference calls. ONNX key mismatch � output is not last_hidden_state. Requires ort-node direct approach |
-| stella_en_400M_v5 | FAILED (expected) | model_type="new" custom arch, no ONNX in any HF repo |
-
-### Patterns Captured
-- **No provider reaches dedupGap=0.15**: All models have dedupGap 0.013�0.105 (target is >0.15 for reliable Spec-03 dedup). Dedup threshold must be tuned per model (recommend cosine = 0.85). mxbai is best (0.105).
-- **asyncSep confirms BM25 is essential for Spec-02**: Only azure (0.246 FAIR) and mxbai (0.225 GOOD) have meaningful short-query?long-memory separation. All others FAIR or POOR. Hybrid RRF is not optional.
-- **mxbai wins on all 3 OpenMemory suites**: memSep=0.368, dedupGap=0.105, asyncSep=0.225 � holistically best local model for OpenMemory despite SW-engineering Sep being 88% of azure.
-- **stellar pipeline returns undefined for qwen2 arch**: feature-extraction pipeline in transformers.js does not handle qwen2 ONNX output key. Workaround: use ort-node direct inference (like qwen3-4b/8b). 1.7 GB ONNX was not downloaded to local cache.
-
-### Decision
-Run10 confirms existing production recommendation (azure primary, arctic-l-v2 offline). New finding: mxbai is the most OpenMemory-holistic local model if dedup+retrieval quality matters more than raw SW-engineering Sep. asyncSep shows all models need BM25 for short-query retrieval � pure vector search is insufficient.
-
-### Verification
-- npx tsc --noEmit: benchmark-embeddings.ts clean; pre-existing .next/types error only
-- Full 12-provider benchmark run10 with 3 new test suites: EXIT 0
-- spec 10: updated � Run10 section, OpenMemory test suite table, stella failure notes, Decision Log
-
----
-
-## Session 20 — Run 11: Negation Safety, Supersede Zone, Entity Description Suites
-
-### Objective
-User asked "does current benchmark quality testing cover all usecases of our mcp server?" Agent identified 3 remaining gaps, user approved all additions. Added 3 new test suites covering remaining MCP tool paths.
-
-### Gaps Identified
-1. **Negation safety** — add_memories dedup: cosine cannot distinguish "User likes coffee" from "User doesn't like coffee". Risk: false SKIP on contradictory corrections.
-2. **Supersede zone** — update_memory + add_memories supersede path: updated facts (same entity, new value) must land in ~0.75-0.92 cosine zone. Below zone = ADD (duplicate stored); above = SKIP (correction lost).
-3. **Entity description** — search_memory_entities / get_memory_entity: short name-fragment query vs long entity description.
-
-### Changes Made
-- scripts/benchmark-embeddings.ts: +6 pair arrays (NEGATION_SAME, NEGATION_CONTRA, SUPERSEDE, SUPERSEDE_NEG, ENTITY_POS, ENTITY_NEG — 8 pairs each), +9 BenchmarkResult fields, +3 runBenchmark blocks, +3rd printReport table
-- specs/10-embedding-providers.md: +3 config rows, Run 11 section, +7 decision log entries
-- AGENTS.md: Session 20 appended
-
-### Run 11 Key Results
-
-| Provider | negGap | supSim | entSep | eGrd |
-|---|---|---|---|---|
-| azure | 0.018 | 0.613 BELOW ZONE | 0.471 | GOOD |
-| gte-large | **0.122** best negGap | 0.771 ok | 0.282 | GOOD |
-| mxbai | 0.084 | 0.745 ok | 0.339 | EXCELLENT |
-| arctic-l-v2 | -0.023 | 0.730 ok | **0.489** best entity | GOOD |
-| nomic-v2-moe | 0.004 | 0.821 ok | 0.466 | GOOD |
-| qwen3-4b | 0.051 | 0.695 low | 0.361 | EXCELLENT |
-
-### Critical Patterns
-
-- **negGap universally low (all models)**: Dense cosine CANNOT safely detect negations. 4 models negative negGap. Must add BM25 lexical pre-filter before cosine dedup for negation words (not, doesn't, never).
-- **Azure supSim (0.613) misses supersede zone**: Must lower Azure-specific dedup threshold to ~0.55. qwen3-emb (0.691) and qwen3-4b (0.695) also slightly below 0.75 zone.
-- **arctic-l-v2 best entity retrieval (0.489)**: Its low NegSim characteristic separates different entities effectively.  
-- **gte-large only model clearing negGap>0.10 (0.122)**: For dedup-safety-critical deployments, prefer gte-large over mxbai.
-
-### Verification
-- npx tsc --noEmit: benchmark-embeddings.ts clean; pre-existing .next/types error only
-- benchmark run11: EXIT 0, all 12 providers, 6 suites each
-- specs/10-embedding-providers.md: updated with Run 11 section + config table + decision log
----
-
-## Session 21 — BM25 negation gate, Azure dedup threshold, azure-large provider, Qwen3 1024-dim Matryoshka
-
-### Objective
-- Add BM25 lexical negation safety gate to the dedup pipeline (before cosine merge commits)
-- Lower Azure-specific dedup threshold to 0.55 (azure-small supSim=0.613 misses the 0.75 zone)
-- Add `text-embedding-3-large (1024-dim MRL)` as `azure-large` provider in benchmark
-- Reduce Qwen3-Embedding-4B from 2560-dim to 1024-dim Matryoshka truncation
-- Reduce Qwen3-Embedding-8B from 4096-dim to 1024-dim Matryoshka truncation
-- Re-run benchmarks as run12
-
-### Changes Made
-- **`lib/dedup/index.ts`**: Added `NEGATION_TOKENS` set + `tokenizeWords()` / `hasNegation()` / `isNegationSafe()` helpers. Detected Azure provider via env vars. Added `effectiveThreshold` (uses `azureThreshold` when Azure detected). BM25 negation gate placed POST-LLM-verification, only blocks `DUPLICATE` outcomes — `SUPERSEDE` is intentionally exempt (temporal updates like "no longer in NYC" legitimately use negation).
-- **`lib/config/helpers.ts`**: Extended `DedupConfig` interface with `azureThreshold: number`; `getDedupConfig()` returns default `0.55`.
-- **`scripts/benchmark-embeddings.ts`**: Added `buildAzureLargeProvider()` (dimensions: 1024 in API call, model `text-embedding-3-large`). Changed Qwen3-4B `DIM` 2560→1024 with L2-renorm after truncation. Changed Qwen3-8B `DIM` 4096→1024 with L2-renorm. Added azure-large run block to `main()`. Updated model name strings.
-- **`tests/unit/dedup/dedup-orchestrator.test.ts`**: Added `azureThreshold: 0.55` to all 5 `mockGetDedupConfig.mockResolvedValue({...})` calls.
-- **`specs/10-embedding-providers.md`**: Status line updated, Run 12 Results section added, vs-Azure table extended with azure-large row, 7 new decision log entries.
-
-### Run 12 Key Results (13 providers, EXIT 0)
-
-| Provider | sep | negGap | supSim | entSep | eGrd | Note |
-|---|---|---|---|---|---|---|
-| azure-large | 0.515 | 0.088 | 0.651 | 0.514 | EXCELLENT | **NEW: 105% azure-small** |
-| azure | 0.492 | 0.018 | 0.613 | 0.471 | GOOD | Both miss 0.75 zone; covered by azureThreshold=0.55 |
-| arctic-l-v2 | 0.469 | -0.023 | 0.730 | 0.489 | GOOD | 95% azure-small, 9.4ms local |
-| mxbai | 0.432 | 0.084 | 0.745 | 0.339 | EXCELLENT | |
-| gemma-emb | 0.422 | 0.082 | 0.700 | 0.375 | GOOD | |
-| qwen3-4b | 0.349 | 0.043 | 0.719 | 0.341 | EXCELLENT | was 0.370@2560d; supSim↑ 0.695→0.719 |
-| qwen3-8b | 0.297 | 0.046 | **0.779** | 0.308 | EXCELLENT | NOW IN supersede zone at 1024-dim |
-| gte-large | 0.331 | **0.122** | 0.771 | 0.282 | GOOD | Best negGap of all providers |
-
-### Critical Patterns
-
-- **BM25 negation gate must be post-LLM**: Temporal "no longer in X" sentences use negation but are correct SUPERSEDE updates. Pre-filtering would break ORCH_04. Gate must only fire on LLM-confirmed DUPLICATE.
-- **Azure-large same dimension as local BERT (1024)**: Zero-friction switch between azure-large and arctic-l-v2 — no Memgraph index migration needed.
-- **Matryoshka 2560→1024 for Qwen3-4B**: -5.7% Sep but supSim improves (0.695→0.719). For Qwen3-8B: supSim jumps into zone (0.779) at 1024-dim.
-- **azureThreshold=0.55 detection**: Auto-detected from `EMBEDDING_PROVIDER=azure` + `EMBEDDING_AZURE_OPENAI_API_KEY` present. No config file change needed for standard deployments.
-
-### Verification
-- `npx tsc --noEmit`: Clean (pre-existing `.next/types` error only)
-- benchmark run12: EXIT 0, 13 providers measured (2 stella unchanged-failures as before)
-- `npx jest tests/unit/dedup/dedup-orchestrator.test.ts --runInBand --no-coverage`: **8/8 passed** (ORCH_01–ORCH_08, 0.349s)
-- specs/10-embedding-providers.md: updated with Run 12 section + azure-large row + decision log
-
----
-
-## Session 22 — intelli-embed: SLERP Merge + Fine-Tune + ONNX Export + Benchmark
-
-### Goal
-Create a custom "intelli-embed" model by SLERP-merging arctic-l-v2 and mxbai encoder layers, fine-tuning on AllNLI, exporting to INT8 ONNX, and benchmarking as provider #13 in run13.
-
-### Pipeline Executed
-1. **SLERP merge** (alpha=0.5): Merged 384 tensors across 24 XLM-RoBERTa encoder layers. Kept arctic-l-v2's token embeddings (250k vocab, 8194-ctx). Output: `scripts/intelli-embed/` (~2.2 GB PyTorch).
-2. **Fine-tuning** (RTX 4090, 24 GB): AllNLI 550k pairs + 25 OpenMemory synthetic pairs, MNR loss, 2 epochs, lr=2e-5, effective batch=512 via GradCache. ~67 min. Loss: 5.38 → 1.38. STS-B dev spearman=0.583.
-3. **ONNX export + INT8 quantization**: Via `optimum` ORTModelForFeatureExtraction + `onnxruntime.quantization.quantize_dynamic`. Output: `scripts/intelli-embed/onnx/model_quantized.onnx` (542.1 MB). Self-test passed (cosine err < 0.02 vs PyTorch).
-4. **TypeScript provider**: Added `buildIntelliEmbedProvider()` to `benchmark-embeddings.ts` — uses `onnxruntime-node` InferenceSession + `@huggingface/transformers` AutoTokenizer, CLS pooling, L2-normalize, 1024-dim.
-5. **Benchmark run13**: 14 providers + 2 stella failures. EXIT 0.
-
-### Files Modified
-- **`scripts/merge_intelli_embed.py`** (new): SLERP merge script with regex fix for bare `encoder.layer.N.*` keys
-- **`scripts/finetune_intelli_embed.py`** (new): Fine-tuning with num_workers=0 fix for Windows
-- **`scripts/export_intelli_embed_onnx.py`** (new): ONNX export with INT8 quantization
-- **`scripts/benchmark-embeddings.ts`**: Added `buildIntelliEmbedProvider()` (~80 lines), main() call as #13, updated header, renumbered stella to #14/#15
-- **`specs/10-embedding-providers.md`**: Updated to run13 — new consolidated table with 14 providers, Run 13 section, intelli-embed post-mortem, Expected Outcome → Projected vs Actual
-- **`scripts/intelli-embed/`** (new directory): Tokenizer files, config, ONNX model
-
-### Run 13 Results — intelli-embed
-
-| Metric | arctic-l-v2 (parent) | mxbai (parent) | intelli-embed (actual) |
-|--------|---------------------|----------------|----------------------|
-| Sep | 0.469 | 0.432 | **0.142** (FAIR) |
-| PosSim | 0.644 | 0.784 | **0.827** |
-| NegSim | 0.175 | 0.352 | **0.685** |
-| negGap | −0.023 | 0.084 | **−0.012** |
-| entSep | 0.489 | 0.339 | **0.120** |
-| dedupGap | 0.070 | 0.105 | **0.030** |
-| p50 ms | ~10 | ~11 | **10.6** |
-
-**Verdict: FAILURE.** The SLERP merge produced high PosSim (all text maps close together) but catastrophic NegSim inflation (0.685). The vocabulary mismatch between XLM-RoBERTa (250k) and RoBERTa (50k) meant the merged encoder outputs don't match either tokenizer's expected distribution. MNR loss with 512 effective batch was insufficient to re-align the space — hard-negative contrastive training or knowledge distillation would be needed.
-
-### Patterns Captured
-- **Cross-vocabulary SLERP is high-risk**: Only merge models sharing the same tokenizer/vocab. XLM-RoBERTa ↔ RoBERTa encoder SLERP produces a space where everything clusters.
-- **NegSim is the killer metric**: PosSim=0.827 (highest of any model) is meaningless when NegSim=0.685 makes everything look similar.
-- **MNR loss with in-batch negatives is insufficient for re-alignment**: After weight merging, the model needs explicit hard-negative mining (TripletLoss, GISTEmbedLoss) to push unrelated pairs apart.
-- **INT8 quantization amplifies merge damage**: Already-fragile merged weights lose more precision under dynamic INT8.
-
-### Verification
-- benchmark run13: EXIT 0, 14 providers measured (2 stella unchanged-failures)
-- intelli-embed loaded successfully: ort-node InferenceSession, 10.6ms p50, 11.5ms p95
-- specs/10-embedding-providers.md: updated with Run 13 section + intelli-embed post-mortem + actual vs projected table
-
----
-
-## Session 23 — intelli-ensemble Inference-Time Avg (run14)
-
-### Objective
-Re-approach custom model design after intelli-embed SLERP failure. Establish a no-training baseline by implementing an inference-time ensemble of the two best local models (arctic-l-v2 + mxbai) to set the upper-bound target for any future merge.
-
-### Changes Made
-- `scripts/benchmark-embeddings.ts`: added `buildIntelliEnsembleProvider()` function (runs arctic-l-v2 + mxbai in parallel, averages 1024-dim CLS vectors, L2-renormalizes)
-- `scripts/benchmark-embeddings.ts`: added ensemble runner as block #14 in `main()`; renumbered stella blocks to #15/#16
-- `specs/10-embedding-providers.md`: updated Status header (15 providers, run14); updated `Results — Latest` section; added run14 results tables (SW-sep, use-case metrics, extended MCP metrics); updated vs-azure comparison table; added decision log entries
-
-### intelli-ensemble Results (run14)
-
-| Metric | arctic-l-v2 (parent) | mxbai (parent) | intelli-ensemble (actual) |
-|--------|---------------------|----------------|--------------------------|
-| Sep | 0.469 | 0.432 | **0.450** EXCELLENT |
-| PosSim | 0.644 | 0.784 | **0.724** |
-| NegSim | 0.175 | 0.352 | **0.274** |
-| negGap | −0.023 | 0.084 | **0.030** |
-| entSep | 0.489 | 0.339 | **0.401** EXCELLENT |
-| dedupGap | 0.070 | 0.105 | **0.084** |
-| supSim | 0.730 | 0.745 | **0.753** (in 0.75–0.92 zone!) |
-| memSep | 0.341 | 0.368 | **0.344** EXCELLENT |
-| p50 ms | ~12.5 | ~12.8 | **86.2** (CPU serial; theoretical ~13ms parallel) |
-
-**Verdict: SUCCESS.** Sep=0.450 EXCELLENT = 92% of azure-small. The ensemble arithmetically averages both models' representation spaces — NegSim=(0.175+0.352)/2=0.263→normalized 0.274. Most importantly, supSim=0.753 enters the 0.75–0.92 supersede zone (both parents were below). entSep=0.401 is strong. This is the **upper-bound target**: any TIES-merge + fine-tune must beat sep=0.450 to justify training cost.
-
-### Patterns Captured
-- **Inference ensemble is arithmetic averaging in similarity space**: sep = approx. average of parent seps (confirmed: (0.469+0.432)/2 = 0.450).
-- **supSim benefit of averaging**: both parents were slightly below 0.75 (0.730, 0.745); the averaged space naturally centers the supersede zone representation, landing at 0.753 — in zone.
-- **RRF (Reciprocal Rank Fusion) would beat pure avg**: Using each model's ranking then RRF-combining (rather than vector averaging) would better capture the "best of both". Not yet implemented.
-- **CPU serial latency vs parallel**: Node.js WASM/ONNX backends serialize even with Promise.all. Real parallelism requires separate processes or GPU inference. Benchmark shows 86ms CPU serial; theoretical 13ms with true parallel.
-
-### Next Steps (pending)
-- Option B: TIES-merge (arctic-l-v2 + bge-m3, same XLM-RoBERTa vocab) + GISTEmbedLoss fine-tune — must beat sep=0.450
-- Option C: 3-way TIES merge (arctic-l-v2 + bge-m3 + arctic-l) + hard negative mining
-- Sep=0.450 baseline established — use as acceptance gate for any trained model
-
-### Verification
-- benchmark run14: EXIT 0, 15 providers measured (intelli-ensemble loaded, 2 stella unchanged-failures)
-- intelli-ensemble: loaded arctic-l-v2 q8 + mxbai q8 successfully, both pipeline instances initialized
-- specs/10-embedding-providers.md: run14 section added, results table updated
-- AGENTS.md: this entry
-
----
-
-## Session 24 -- intelli-embed-v2: Three-Loss Fine-Tune Design
-
-### Objective
-Design and implement a proper fine-tuned model to beat sep=0.450 (intelli-ensemble upper-bound). Three complementary losses applied to arctic-l-v2 student: mxbai as GIST in-batch teacher (Phase 1, GISTEmbedLoss), MNRL hard-negative fine-tuning (Phase 2), azure-large MSE distillation (Phase 3).
-
-### Files Created / Modified
-- scripts/finetune_intelli_embed_v2.py (new, ~520 lines): Phase1=GISTEmbedLoss(guide=mxbai,3ep), Phase2=MNRL(2ep), Phase3=MSELoss distillation from azure-large cache(2ep). bf16, gradient_checkpointing, adamw_torch_fused, save_strategy=no, explicit student.save() at phase boundaries.
-- scripts/export_intelli_embed_v2_onnx.py (new, ~310 lines): INT8 ONNX export with fallback chain intelli-embed-v2 -> after-phase2 -> after-phase1.
-- scripts/benchmark-embeddings.ts: added buildIntelliEmbedV2Provider() + block 15 in main().
-- Azure cache: scripts/.cache/azure-embeddings/azure_large_1024_cache.pt (1.67 GB, 188920 sentences) -- built once, reused every Phase 3 restart.
-
-### Patterns
-- Three-loss curriculum: GIST -> MNRL -> MSE distillation (curriculum learning order).
-- Explicit student.save() required when save_strategy=no -- Trainer will not auto-save.
-- Azure cache PT file survives process kills; Phase 3 startup ~5 sec vs ~30 min without cache.
-
----
-
-## Session 25 -- intelli-embed-v2 Training: 5 Attempts, Root Cause Found and Fixed
-
-### Crash History
-
-| Attempt | Crash site | Error | Fix |
-|---------|-----------|-------|-----|
-| 1 | safetensors/torch.py (step 400) | MemoryError | save_strategy steps->epoch |
-| 2 | safetensors/torch.py (epoch 1 end) | MemoryError | save_strategy=no |
-| 3 | pickle.py write_large_bytes (epoch 1 end) | MemoryError | eval_strategy=no + removed evaluators |
-| 4 | pickle.py write_large_bytes (epoch 1 end) | MemoryError | Same -- root cause identified |
-| 5 | Running | -- | CachedGISTEmbedLoss -> GISTEmbedLoss |
-
-### Root Cause
-CachedGISTEmbedLoss pre-computes ALL ~100k mxbai teacher embeddings into a Python dict at startup (~800 MB RAM). At every epoch boundary PyTorch DataLoader workers restart and pickle the entire loss function state. This ~800 MB pickle write = MemoryError. This is DataLoader internals -- save_strategy and eval_strategy have zero effect on it.
-
-### Fix Applied (scripts/finetune_intelli_embed_v2.py line ~417)
-BEFORE: loss_a = losses.CachedGISTEmbedLoss(model=student, guide=mxbai, mini_batch_size=32)
-AFTER:  loss_a = losses.GISTEmbedLoss(model=student, guide=mxbai)
-
-GISTEmbedLoss runs mxbai teacher forward pass per batch only -- no large dict, no epoch-boundary OOM.
-Trade-off: ~2.0 s/it (vs ~1.7 with cached). Phase 1: ~4.2h (vs ~3.3h). Training quality: identical.
-
-### Status (2026-02-23)
-Attempt 5 running. Log: C:\Users\Selet\AppData\Local\Temp\qwen3-logs\finetune-v2.log
-Step 59/2346 at ~1.85 s/it when last checked. Epoch 1 boundary = true test.
-ETA Phase 1: ~4.2h. Phases 2+3: ~1.5h additional.
-
-### Patterns
-- DataLoader worker pickling is NOT controlled by save_strategy/eval_strategy. Epoch-boundary worker restarts pickle ALL loss function state unconditionally.
-- CachedGISTEmbedLoss is unsafe for large datasets (>100k pairs with big teacher). Use GISTEmbedLoss instead.
-- Never attach large dicts (~>200MB) to loss function objects when training >1 epoch with multiple DataLoader workers.
-
-### Next Steps
-1. Watch epoch 1 boundary: Get-Content finetune-v2.log | Select-Object -Last 5
-2. TRAINING_DONE exit=0 -> python scripts/export_intelli_embed_v2_onnx.py
-3. Benchmark run15: Push-Location openmemory/ui; =...; npx tsx scripts/benchmark-embeddings.ts | Tee-Object benchmark-run15.log
-4. Acceptance gate: sep>0.469 SUCCESS; sep>=0.490 EXCELLENT (matches azure-small)
-5. Update specs/10-embedding-providers.md with run15 results
-
-
----
-
-## Session 26 -- jina-v5-small Benchmark Preparation
-
-### Objective
-Benchmark jinaai/jina-embeddings-v5-text-small before run15. nvidia-nemotron-8b skipped (15 GB, VRAM conflict with ongoing training).
-
-### ONNX Export Failure Analysis
-Both export paths blocked for jina-v5-text-small:
-1. optimum ORTModelForFeatureExtraction: custom arch jina_embeddings_v5 not registered; no custom_onnx_configs passed
-2. torch.onnx.export (JIT trace): Qwen3 base uses torch.vmap in attention mask -> trace fails with vmap dispatch error
-
-Root cause: jina-v5-text-small = Qwen3 + PEFT LoRA adapters + custom_st.py. Qwen3 attention mask uses create_causal_mask with nested vmap calls that are incompatible with torch.jit.trace.
-
-### API Discovery
-jina-v5 uses task-based encoding, NOT standard ST prompt_name:
-  model.encode(text, task=''retrieval'', normalize_embeddings=True)
-
-Error if prompt_name used: ValueError: Task must be specified before encoding data.
-Set model_kwargs={''default_task'': ''retrieval''} or pass task= to encode().
-
-### Solution Implemented
-Python HTTP embed server approach:
-- scripts/embed_server.py: SentenceTransformer + trust_remote_code=True, auto-detects encoding API (prompt_name -> task -> plain)
-- scripts/benchmark-embeddings.ts: spawnEmbedServer() helper + buildJinaV5SmallProvider()
-- Provider spawns Python subprocess, waits for READY, then calls POST /embed for each text
-- Server killed in finally block after benchmark completes
-
-### Files Created / Modified
-- scripts/embed_server.py (NEW): generic Python HTTP embed server for custom-arch models
-- scripts/export_jina_v5_onnx.py (NEW): ONNX export attempt (kept for doc; blocked by vmap)
-
----
-
-## Session 27 -- Build blocker + API 500 cleanup (runtime environment)
-
-### Objective
-Close remaining TODOs from Session 13 continuation: fix recurring Next.js build/dev module errors, isolate API 500 cause in e2e, and re-validate full app quality gates.
-
-### Root Causes Confirmed
-- **Corrupted pnpm store artifacts for Next 15.2.4** in workspace root caused missing internal files (`next/dist/build/webpack-build/impl.js`, `next/dist/pages/_app.js`) and intermittent `MODULE_NOT_FOUND` during `build`/`dev`.
-- **Stale Node dev processes on ports 3000/3001** served broken runtime state; e2e default base URL (`http://localhost:3000`) hit stale server, producing false API 500s on entities endpoints.
-
-### Remediation
-- Ran dependency repair at workspace root:
-  - `pnpm install --force`
-  - `pnpm store prune` + `pnpm install --force`
-- Verified restored Next internals with `Test-Path` checks for:
-  - `next/dist/build/webpack-build/impl.js`
-  - `next/dist/pages/_app.js`
-- Killed stale Node listeners on 3000/3001 and started a fresh `my-v0-project` dev server.
-- Re-verified API flow directly (`POST /memories` -> `POST /memories/reextract` -> `GET /entities`) returned 200 with entity payload.
-
-### Verification
-- `npx jest --config jest.e2e.config.ts tests/e2e/04-entities.test.ts --runInBand`: **PASS (5/5)**
-- `npx jest --config jest.e2e.config.ts tests/e2e/06-search.test.ts --runInBand`: **PASS (8/8)**
-- `pnpm test:e2e`: **PASS (11/11 suites, 73/73 tests)**
-- `pnpm build` (`NODE_ENV=production`, no `NEXT_RUNTIME`): **PASS**
-
-### Patterns
-- If e2e failures appear only on API status and not on route code changes, first verify the process bound to `:3000` (stale server mismatch can masquerade as backend regressions).
-- For Next internal module-not-found in pnpm workspaces, validate package file existence under `node_modules/.pnpm/next@...` and recover with `pnpm store prune` + forced reinstall.
-- scripts/benchmark-embeddings.ts: Added spawnEmbedServer(), buildJinaV5SmallProvider(), block 16 in main()
-- imports: child_process.spawn added
-- Header comment updated to note Python subprocess usage
-
-### Smoke Test Results (2026-02-23)
-jina-v5-small quick test:
-  cos(query, relevant_doc) = 0.7011
-  cos(query, unrelated_doc) = 0.1283
-  sep = 0.5728 -- EXCELLENT (vs azure-large sep=0.515, arctic-l-v2 sep=0.469)
-
-### Training Status (2026-02-23 ~42 min in)
-Step 953/2346, epoch 1.21, loss=0.046, grad_norm=1.46
-Passed epoch 1 boundary without crash -- GISTEmbedLoss fix CONFIRMED working.
-ETA Phase 1: ~82 min remaining.
-
-### Dependencies Installed
-- peft 0.18.1 (required by jina-v5 custom modeling code)
-
-### Patterns
-- Qwen3-based models (jina-v5, qwen3-embed) use vmap in attention masks -> incompatible with torch.jit.trace and optimum ONNX export.
-- jina-v5-text-small uses task= API not prompt_name=; auto-detection in embed_server.py handles both.
-- Python embed server approach works for any model sentence-transformers can load, regardless of architecture.
-- embed_server.py prints READY on stdout; TypeScript waits for this before accepting requests.
-
-### Next Steps (order)
-1. Wait for training TRAINING_DONE at ~epoch 1.21/7 total phases... actually wait for full training
-2. python scripts/export_intelli_embed_v2_onnx.py
-3. npx tsx scripts/benchmark-embeddings.ts > benchmark-run15.log (18 providers including jina-v5-small)
-4. Update specs/10-embedding-providers.md with run15 results
-5. Benchmark nvidia-nemotron-8b separately (run16) after training is done
-
-
----
-
-## Session 27 — jina-v5-small ONNX Export (ort-node native)
-
-### Objective
-Export jinaai/jina-embeddings-v5-text-small to ONNX for native ort-node usage, bypassing the Python embed server. Previously considered impossible due to Qwen3 	orch.vmap in attention masking.
-
-### Root Blocker Resolved
-	orch >= 2.6 selects sdpa_mask_recent_torch which uses 	orch.vmap internally — not ONNX-traceable. Fix:
-1. ttn_implementation="eager" on AutoModel load — bypasses the vmap codepath
-2. Global monkey-patch: 	ransformers.masking_utils.sdpa_mask = lambda ... — replaces vmap with simple 	orch.tril; must patch the global in masking_utils, not at model level
-
-### Export Path
-- Script: scripts/export_jina_v5_small_onnx.py
-- Method: 	orch.onnx.export classic (dynamo path failed separately)
-- Output: scripts/jina-v5-small-onnx/onnx/ — multi-file ONNX:
-  - model.onnx (1.8 MB proto)
-  - 197 external MatMul weight files (~8-12 MB each)
-  - ase.base_model.model.embed_tokens.weight (593.5 MB embedding table)
-- Input: ["input_ids", "attention_mask"]
-- Output: ["embeddings"] — already mean-pooled + L2-normalized, shape (B, 1024)
-- Tokenizer: Qwen2Tokenizer, fully supported by @huggingface/transformers
-- INT8 quantization: OOM (ort-quantization loads all 197 files simultaneously for shape inference) — fp32 used
-
-### ort-node Validation
-- scripts/test-jina-onnx.mjs: shape (1, 1024), L2 norm = 1.0000 ✅
-
-### benchmark-embeddings.ts Changes
-uildJinaV5SmallProvider() rewritten:
-- Checks for scripts/jina-v5-small-onnx/onnx/model.onnx; if found: ort-node + local Qwen2Tokenizer; output ["embeddings"] already pooled+normalized
-- Falls back to Python embed server at port 7863 if not found
-- _serverKill?.() uses optional chaining (no-op for ort-node path)
-
-### Patterns
-- ttn_implementation="eager" + masking_utils.sdpa_mask global patch = only known way to ONNX-export torch≥2.6 Qwen3 models
-- Multi-file ONNX with 197 external weight files loads correctly via ort-node — pass proto path, externals auto-resolved from same directory
-
----
-
-## Session 28+29 — intelli-embed-v2 Training Complete + Benchmark Run15
-
-### Training Crash History Summary
-
-All prior crashes (attempts 1-5) were pickle-related on epoch boundary via DataLoader workers — fixed by GISTEmbedLoss (no internal dict). Attempt #6 completed Phase 1 fully then crashed at Phase 2 dataset build with a new MemoryError variant.
-
-### Root Cause (attempts 6-8): datasets 4.5.0 generate_fingerprint MemoryError
-
-**Crash chain:**
-`
-build_phase2_dataset
-→ Dataset.from_dict({"sentence": 200040 strs, "label": 200040×3072 float32})
-→ Dataset.__init__: if self._fingerprint is None: self._fingerprint = generate_fingerprint(self)
-→ Hasher.update(state["_data"])  ← NO is_caching_enabled() guard in v4.5.0
-→ dill.dumps(PyArrow table, 2.4 GB)
-→ bytes(bytearray(2.4 GB))
-→ MemoryError
-`
-
-disable_caching() ineffective — v4.5.0 generate_fingerprint always runs.
-
-Attempt 7: patched datasets.fingerprint.generate_fingerprint — ineffective (arrow_dataset.py holds a separate local reference from rom datasets.fingerprint import generate_fingerprint at import time).
-
-**Correct fix (attempt 9):**
-`python
-disable_caching()
-
-import uuid as _uuid
-import datasets.fingerprint as _dsf
-import datasets.arrow_dataset as _dsad
-_dsf.generate_fingerprint = lambda _d: _uuid.uuid4().hex   # source module
-_dsad.generate_fingerprint = lambda _d: _uuid.uuid4().hex  # local ref (the one actually called)
-`
-
-### Phase 1 Checkpoint Recovery
-Attempt #6 Phase 1 fully completed (epoch 3.0, loss=0.0294, 5849s). Crash was in Phase 2 dataset build. Added --skip-phase1 flag + auto-detection: if scripts/intelli-embed-v2/after-phase1/ exists, load checkpoint and skip Phase 1 + mxbai load. Saves ~97 min on restart.
-
-### Training Results (Attempt #9, PID 52748)
-
-| Phase | Details | Result |
-|-------|---------|--------|
-| Phase 1: GISTEmbedLoss+MNRL | Loaded from after-phase1/ checkpoint (skipped) | Already done, loss=0.0294 |
-| Phase 2: Azure-large MSE distillation | 200040 sentences, 3126 steps | ~9 min, completed ✓ |
-| Phase 3: Hard-negative MNRL | 7107 triplets mined, 223 steps | 77s, train_loss=0.023 ✓ |
-
-Final model: scripts/intelli-embed-v2/ (model.safetensors + tokenizer + pooling config)
-
-### ONNX Export
-- Run: python scripts/export_intelli_embed_v2_onnx.py --quant-only
-- fp32: 2267.3 MB (model.onnx + model.onnx_data)
-- INT8: model_quantized.onnx 568.5 MB
-- Quick sep proxy check (6 pairs, INT8): posSim=0.764, negSim=0.104, **sep=0.660 grade=S**
-- Self-test cosine error (INT8 vs fp32): 0.036 (expected for INT8)
-- Export script fixes: SameFileError guard (src.resolve() != dst.resolve()); encoding="utf-8" on README write (Windows cp1252 cannot encode ↑ U+2191)
-
-### Benchmark Run15 (17 active + 2 stella FAILs)
-
-**Primary Sep Ranking:**
-
-| Rank | Provider | Sep | Grade | p50ms |
-|------|---------|-----|-------|-------|
-| 1 | azure-large | 0.515 | GOOD | ~110 |
-| 2 | azure | 0.511 | GOOD | ~80 |
-| 3 | **intelli-embed-v2** | **0.484** | GOOD | **9.7** |
-| 4 | arctic-l-v2 | 0.469 | GOOD | ~10 |
-| 5 | intelli-ensemble | 0.450 | EXCELLENT | ~103 |
-| 6 | mxbai | 0.432 | EXCELLENT | ~10 |
-| 7 | gemma-emb | 0.422 | EXCELLENT | ~95 |
-| 8 | jina-v5-small | 0.374 | FAIR | 32.0 |
-| 9 | qwen3-4b | 0.349 | EXCELLENT | ~65 |
-| 10 | qwen3-emb | 0.347 | EXCELLENT | ~16 |
-| 11 | gte-large | 0.331 | EXCELLENT | ~30 |
-| 12 | nomic-v2-moe | 0.317 | FAIR | ~250 |
-| 13 | qwen3-8b | 0.297 | GOOD | ~110 |
-| 14 | nomic-v1.5 | 0.289 | GOOD | ~8 |
-| 15 | bge-m3 | 0.232 | GOOD | ~115 |
-| 16 | arctic-l | 0.200 | FAIR | ~10 |
-| 17 | intelli-embed | 0.142 | FAIR | ~10 |
-| ✗ | stella-1.5B | FAIL | — | extractor null/undefined |
-| ✗ | stella-400M | FAIL | — | no ONNX |
-
-**Acceptance gate:** sep > 0.469 (beat arctic-l-v2) → ✅ PASSED (0.484 > 0.469)
-**Stretch goal:** sep ≥ 0.490 (match azure-small) → ❌ missed by 1.2% — consider fp32 run
-
-**intelli-embed-v2 OpenMemory metrics:** memSep=0.439 EXCELLENT, dedupGap=0.102, asyncSep=0.240 FAIR, entSep=0.491 GOOD
-
-**jina-v5-small anomaly:** dedupGap=-0.239 (near-dupe pairs score LOWER than unrelated pairs). ort-node tokenization may be mismatched. Not suitable for production.
-
-**Node v22 change:** 
-ode --loader tsx deprecated → use 
-px tsx scripts/benchmark-embeddings.ts
-
-### Patterns Captured
-- **datasets 4.5.0 no caching guard**: Patch rrow_dataset.generate_fingerprint (local bound ref), not just ingerprint.generate_fingerprint (source).
-- **Phase checkpoint auto-detect**: Check checkpoint_path.exists() before any expensive Phase to skip on restart. Pattern used in all future multi-phase training scripts.
-- **shutil.copy2 SameFileError**: When model_dir == OUTPUT_DIR guard with if src.resolve() != dst.resolve().
-- **INT8 proxy vs full benchmark delta**: 6-pair proxy showed sep=0.660 S; 100+ pair full benchmark showed sep=0.484 GOOD. Proxy overestimates on easy pairs; full benchmark is ground truth.
-- **npx tsx replaces node --loader tsx**: Node v22 deprecation, update all benchmark/export run instructions.
-
-### Files Modified
-| File | Change |
-|------|--------|
-| scripts/finetune_intelli_embed_v2.py | _dsad.generate_fingerprint patch; --skip-phase1 auto-detect; numpy import; numpy labels |
-| scripts/export_intelli_embed_v2_onnx.py | SameFileError guard; encoding="utf-8" on README |
-| scripts/benchmark-embeddings.ts | uildJinaV5SmallProvider() prefers ort-node ONNX |
-| scripts/export_jina_v5_small_onnx.py | New: jina-v5-small export with eager attn + masking_utils patch |
-| scripts/test-jina-onnx.mjs | New: ort-node validation |
-
-### Verification
-- Training attempt #9: EXIT natural — all 3 phases printed ✓
-- ONNX model_quantized.onnx: 568.5 MB, self-test error 0.036
-- run15 benchmark: EXIT 0, 17/17 active providers — intelli-embed-v2 sep=0.484 > 0.469 ✅
-
-### Next Steps
-1. Update specs/10-embedding-providers.md with run15 results table
-2. Re-run benchmark with fp32 model to check true (non-INT8) sep (expect ~0.50+)
-3. Debug jina-v5-small negative dedupGap (tokenization mismatch investigation)
-4. Benchmark nvidia-nemotron-8b (run16) — no VRAM conflict now training complete
-
----
-
-## Session — MTEB Leaderboard Submission (2026-02-24)
-
-### Objective
-Submit intelli-embed-v3 to the MTEB leaderboard via PRs to `embeddings-benchmark/results` and `embeddings-benchmark/mteb`.
-
-### MTEB(eng, v2) Results
-All 41 tasks completed with 0 failures. Overall score: **0.5654** (avg of type averages).
-
-| Category | Avg Score | Tasks |
-|----------|-----------|-------|
-| Classification | 0.7650 | 8 |
-| Clustering | 0.4228 | 8 |
-| PairClassification | 0.7976 | 4 |
-| Reranking | 0.3001 | 1 |
-| Retrieval | 0.4931 | 10 |
-| STS | 0.8341 | 9 |
-| Summarization | 0.3452 | 1 |
-
-### Submissions Created
-1. **Results PR:** [embeddings-benchmark/results#422](https://github.com/embeddings-benchmark/results/pull/422) — 42 JSON files uploaded via GitHub API (avoiding 83K-object clone)
-2. **Model meta PR:** [embeddings-benchmark/mteb#4160](https://github.com/embeddings-benchmark/mteb/pull/4160) — `intelli_embed_models.py` with `ModelMeta` for `serhiiseletskyi/intelli-embed-v3`
-3. **HuggingFace model card:** Updated with MTEB scores section + `mteb` tag
-4. **Spec 10:** Updated with MTEB benchmark section and PR links
-
-### Files Created/Modified
-| File | Change |
-|------|--------|
-| scripts/submit_mteb_results.py | New: GitHub API script to create results PR without cloning |
-| scripts/submit_mteb_model_meta.py | New: GitHub API script to create model meta PR |
-| scripts/update_hf_model_card.py | New: Updates HuggingFace model card via huggingface_hub API |
-| specs/10-embedding-providers.md | Added MTEB section + leaderboard PR links |
-
-### Patterns
-- **Large repo submission via API:** For repos too large to clone (embeddings-benchmark/results = 83K objects), use GitHub Git Data API (blobs → tree → commit → ref update → PR) via `gh api`. Avoids clone entirely.
-- **Fork sync before PR:** Always `merge-upstream` the fork before creating a branch to avoid merge conflicts.
-
----
-
-## Session — MCP SSE Test Fix + 260/260 Green (2025-07-27)
-
-### Objective
-Fix the last remaining failing test (`tests/e2e/11-mcp.test.ts`) to achieve 260/260 tests passing.
-
-### Root Causes
-1. **Wrong URL prefix:** Test used `/api/mcp/...` but the route is at `app/mcp/...` (path: `/mcp/...`). No `/api/` prefix.
-2. **Timeout too short:** First SSE fetch used a 3s abort timeout, but Next.js dev-mode compilation on first hit takes ~3s. Increased to 10s.
-3. **Session cleanup race:** `readSseEvents()` called `reader.cancel()` after extracting sessionId, which triggered the SSE route's `cancel()` callback and removed the transport from `activeTransports`. The subsequent POST to `/messages?sessionId=...` got 404. Fixed by keeping the SSE stream alive during the POST, cleaning up in `finally`.
-
-### Changes Made
-| File | Change |
-|------|--------|
-| `tests/e2e/11-mcp.test.ts` | Fixed all URLs from `/api/mcp/...` → `/mcp/...`; increased SSE timeout 3s → 10s; restructured messages test to keep SSE alive during POST |
-| `app/mcp/[clientName]/sse/[userId]/route.ts` | Fixed misleading comment `GET /api/mcp/...` → `GET /mcp/...` |
-
-### Verification
-- `pnpm test -- tests/e2e/11-mcp.test.ts`: **4/4 passed** (264ms, 9ms, 47ms, 17ms)
-- `pnpm test` (full suite): **260/260 tests, 41/41 suites — ALL PASS** (141.8s)
-
-### Patterns
-- **Next.js App Router path mapping:** `app/mcp/[x]/route.ts` → `/mcp/:x`, NOT `/api/mcp/:x`. Only files under `app/api/` get the `/api/` prefix. Always verify route path matches actual file location.
-- **SSE session lifecycle in tests:** When testing SSE + POST flows, keep the SSE stream reader open until after the POST completes. Cancelling the reader triggers server-side cleanup of `activeTransports`, making POST against that session return 404.
-
----
-
-## Session — Full Coverage Baseline (2026-02-26)
-
-### Objective
-Run all unit tests across both packages (`openmemory/ui` and `mem0-ts`) with coverage reporting to identify untested blind spots.
-
-### Results
-
-#### openmemory/ui (`pnpm test -- --coverage`)
-- **Overall:** 79.5% stmts | 57.0% branch | 80.2% funcs | 81.6% lines
-- **Unit tests:** 188 passed
-- **E2E tests:** 72 failed — all `TypeError: fetch failed` (no running dev server, expected)
-- **Known pre-existing failures:** 3 in `tests/unit/entities/resolve.test.ts` (unchanged)
-
-| File | Stmts | Branch | Funcs | Risk |
-|------|-------|--------|-------|------|
-| `lib/embeddings/openai.ts` | 29% | 30% | **0%** | CRITICAL |
-| `lib/memory/categorize.ts` | 35% | **0%** | 50% | CRITICAL |
-| `app/api/v1/memories/[memoryId]/route.ts` | 40% | 15% | 50% | CRITICAL |
-| `lib/entities/link.ts` | 50% | **0%** | **0%** | HIGH |
-| `lib/db/memgraph.ts` | 63% | 41% | 80% | HIGH (DB layer) |
-| `lib/config/helpers.ts` | 69% | 73% | 67% | MEDIUM |
-| `lib/memory/write.ts` | 74% | **25%** | 40% | HIGH (write pipeline) |
-| `lib/search/hybrid.ts` | 79% | 59% | 70% | MEDIUM |
-| `lib/clusters/summarize.ts` | 67% | 21% | 100% | MEDIUM |
-| `lib/mcp/server.ts` | 83% | 68% | 91% | LOW |
-
-#### mem0-ts (`pnpm test -- --coverage`)
-- **Overall:** 54.3% stmts | 40.5% branch | 43.5% funcs | 55.2% lines — **BELOW 90% threshold**
-- **All 215 tests passing**
-
-| File | Stmts | Branch | Funcs | Risk |
-|------|-------|--------|-------|------|
-| `src/graph_stores/memgraph.ts` | **2.7%** | **0%** | **0%** | CRITICAL |
-| `src/vector_stores/memgraph.ts` | **2.9%** | **0%** | **0%** | CRITICAL |
-| `src/memory/graph_memory.ts` | **4.4%** | **0%** | **0%** | CRITICAL |
-| `src/utils/bm25.ts` | **3.2%** | **0%** | **0%** | CRITICAL |
-| `src/embeddings/langchain.ts` | **6.7%** | **0%** | **0%** | CRITICAL |
-| `src/llms/langchain.ts` | **5.7%** | **0%** | **0%** | CRITICAL |
-| `src/llms/mistral.ts` | **6.3%** | **0%** | **0%** | CRITICAL |
-| `src/storage/<MemoryManager variations>` | 9–40% | 0%+ | 0–40% | HIGH |
-| `src/llms/anthropic.ts` | 32% | 13% | 17% | HIGH |
-| `src/llms/azure.ts` | 30% | 35% | 17% | HIGH |
-| `src/llms/google.ts` | 36% | 7% | 25% | HIGH |
-| `src/llms/groq.ts` | 43% | 15% | 20% | HIGH |
-| `src/llms/ollama.ts` | 39% | 24% | 22% | HIGH |
-| `src/reranker/cohere.ts` | 29% | 13% | 33% | HIGH |
-| `src/embeddings/azure.ts` | 54% | 64% | 25% | MEDIUM |
-| `src/embeddings/google.ts` | 50% | 50% | 25% | MEDIUM |
-| `src/memory/index.ts` | 74% | 55% | 83% | MEDIUM |
-
-### Top Blind Spots by Priority
-
-1. **`lib/embeddings/openai.ts` (openmemory/ui) — 0% function coverage.** Core embedding path, called by write pipeline and hybrid search. Zero tests exercise the actual `embed()` function. Current tests mock it entirely.
-2. **`lib/memory/categorize.ts` — 35% stmts, 0% branch.** Fire-and-forget categorization in the write pipeline. No test covers the LLM call, JSON parsing, or Cypher attach path.
-3. **`lib/memory/write.ts` — 25% branch, 40% functions.** The primary write pipeline. `addMemory()` body (lines 201–320) and supersession path (331–340) are untested. `Security/Data` risk.
-4. **`lib/db/memgraph.ts` — lines 69–231 uncovered.** `initSchema()`, `runWrite()` retry, pool management, and error-handling paths all lack unit coverage. Mocked at test boundary but never validated structurally.
-5. **`src/graph_stores/memgraph.ts` / `src/vector_stores/memgraph.ts` (mem0-ts) — 0% coverage.** The entire Memgraph adapter is untested. All tests use the Kuzu adapter.
-6. **`src/memory/graph_memory.ts` (mem0-ts) — 4.4%.** Graph memory pipeline untested; only Kuzu integration tests exercise the non-graph path.
-7. **`src/llms/*` (mem0-ts) — most LLM providers < 40%.** Only OpenAI, DeepSeek, LMStudio, Together, and xAI adapters have meaningful coverage. Anthropic, Azure, Google, Groq, Mistral, Ollama, and Langchain are effectively untested.
-
-### Recommendations (Ranked by Impact × Risk)
-
-| Priority | Action |
-|----------|--------|
-| P1 | Write unit tests for `lib/memory/write.ts` (`addMemory`, `supersedeMemory`) with mocked Memgraph and embed. Data/Security risk. |
-| P2 | Write unit tests for `lib/memory/categorize.ts` (LLM response parsing, Cypher attach, fire-and-forget isolation). |
-| P3 | Write unit tests for `lib/embeddings/openai.ts` (`embed()`, Azure fallback, dimension assertion). |
-| P4 | Write unit tests for `lib/db/memgraph.ts` (`runWrite` retry logic, pool connection, `initSchema` idempotency). |
-| P5 | Add Memgraph adapter mock tests in `mem0-ts` for `src/graph_stores/memgraph.ts` and `src/vector_stores/memgraph.ts`. |
-| P6 | Add unit tests for `app/api/v1/memories/[memoryId]/route.ts` (GET/PUT/DELETE with mocked `runRead`/`runWrite`). |
-| P7 | Expand `mem0-ts` LLM provider coverage (Anthropic, Azure, Google) — adapter contract tests with mocked HTTP. |
-
-### Verification
-- `pnpm test -- --coverage` (openmemory/ui): 188 unit pass, 72 e2e fail (expected, no server)
-- `pnpm test -- --coverage` (mem0-ts): 215/215 pass
-
----
-
-## Session — E2E Full Run Against Live Memgraph (2026-02-26)
-
-### Objective
-Run e2e suite with Memgraph live to get real integration results.
-
-### Issues Fixed
-1. **`jest.e2e.config.ts` TypeScript error:** `import type { Config } from "jest"` fails with `@types/jest@29.5.14` — not a module. Changed to `import type { JestConfigWithTsJest as Config } from "ts-jest"` (matches unit jest.config.ts pattern).
-2. **Memgraph crash loop (exit 139 SIGSEGV):** Container had corrupted WAL in `openmemory_memgraph_data` volume from previous abrupt kill during e2e run. Fixed by: `docker rm -f memgraph && docker volume rm openmemory_memgraph_data && docker-compose up -d memgraph`.
-
-### Result
-**73/73 e2e tests PASS** (100.991 s)
-
-All 11 suites passed:
-- 01-memory-crud: 12/12 ✓ (CRUD, supersession, filter, search)
-- 02-bi-temporal: 7/7 ✓ (V1→V2→V3 supersession chain)
-- 03-dedup: 4/4 ✓ (ADD, SKIP_DUPLICATE, distinct facts)
-- 04-entities: 5/5 ✓ (extraction, type filter, detail endpoint)
-- 05-bulk: 5/5 ✓ (batch create, concurrency)
-- 06-search: 8/8 ✓ (hybrid, vector, text, keyword, namespace isolation)
-- 07-clusters: 4/4 ✓ (rebuild accepted; Louvain/MAGE not installed → graceful skip)
-- 08-namespace-isolation: 9/9 ✓ (cross-user 404, list isolation, PUT blocked)
-- 09-apps-stats: 8/8 ✓ (stats shape, apps list, pagination, detail, 404)
-- 10-actions-config: 8/8 ✓ (archive, pause, config GET/PUT roundtrip)
-- 11-mcp: 4/4 ✓ (SSE, sessionId, POST messages, generic messages)
-
-### Patterns
-- **`jest.e2e.config.ts` type import:** Use `import type { JestConfigWithTsJest as Config } from "ts-jest"` NOT `import type { Config } from "jest"` — the latter is a module export not available in `@types/jest@29`.
-- **Memgraph WAL corruption:** If Memgraph container exits 139 (SIGSEGV) in a crash loop, wipe the data volume: `docker rm -f memgraph && docker volume rm openmemory_memgraph_data`. Do NOT just restart — it will loop indefinitely.
-- **e2e pre-flight checklist:** Before running `pnpm test:e2e`: (1) verify `docker ps` shows memgraph UP; (2) TCP test bolt port 7687; (3) confirm dev server on :3000.
-
----
-
-## Session — Memgraph Integration Test Coverage
-
-### Objective
-Cover four Memgraph-related files with integration tests: `graph_stores/memgraph.ts`, `vector_stores/memgraph.ts`, `MemgraphHistoryManager.ts` (all in mem0-ts), and `openmemory/ui/lib/db/memgraph.ts`.
-
-### Changes Made
-
-#### Source code bug fixes (mem0-ts)
-- **`vector_stores/memgraph.ts`**: Fixed `WHERE` after `YIELD` in `search()` — Memgraph requires `WITH` clause between `YIELD` and `WHERE`. Added `WITH node, similarity` before the WHERE filter.
-- **`graph_stores/memgraph.ts`**: Same Cypher fix in `searchNodes()` and `searchEdges()`. Also added second `WITH` before `ORDER BY` in `searchEdges()` (Memgraph requires `WITH` before `ORDER BY` after `WHERE`).
-
-#### New integration test files (mem0-ts)
-- **`vector_store_memgraph_integration.test.ts`** (17 tests): healthCheck, userId management, insert/get, batch insert, HNSW search (with userId filter, minScore, payload filters), update (with/without embedding), delete, list, deleteCol, reset. Static import for coverage.
-- **`memgraph_history_integration.test.ts`** (9 tests): addHistory (create, update, delete actions), getHistory (ordered, empty, unique IDs), reset, close, init idempotency. Static import for coverage.
-
-#### Fixes to existing tests (mem0-ts)
-- **`graph_store_memgraph.test.ts`**: Changed dynamic `await import()` to static `import` for coverage instrumentation. Fixed stale vector index cleanup in `beforeAll`. Switched to stable index name `entity_integ_test`.
-- **`memory_memgraph_integration.test.ts`**: Fixed stale MemVector index cleanup in `beforeAll`. Switched to stable index name `integ_mem0_vector`.
-- **All 4 test files**: Changed default URL from `bolt://localhost:7687` to `bolt://127.0.0.1:7687` (Windows IPv6 `::1` resolution issue).
-
-#### Extended unit tests (openmemory/ui)
-- **`memgraph.test.ts`** (+11 tests: MG_10–MG_20): `closeDriver()` (close + null singleton, no-op when uninitialized), `initSchema()` error handling ("violates" ignored, "experimental" ignored, unknown rethrown), `ensureVectorIndexes()` (no-op when present, re-create memory_vectors, re-create entity_vectors, re-create both, cached second call, failure logs warning without throwing).
-
-### Coverage Results
-
-| File | Before (stmts) | After (stmts) | Before (funcs) | After (funcs) |
-|------|----------------|----------------|----------------|----------------|
-| `graph_stores/memgraph.ts` | 2.65% | **94.69%** | 0% | **94.44%** |
-| `vector_stores/memgraph.ts` | 2.94% | **95.58%** | 0% | **93.93%** |
-| `MemgraphHistoryManager.ts` | 9.52% | **90.47%** | 0% | **86.66%** |
-| `openmemory/ui memgraph.ts` | 63% | **95.77%** | — | **100%** |
-
-### Test Counts
-- **mem0-ts memgraph suites**: 4 suites, 64 tests (15 graph_store + 23 memory_pipeline + 17 vector_store + 9 history_manager)
-- **openmemory/ui**: 45 suites, 324 tests (20 memgraph tests, up from 9)
-- All tests pass with `--runInBand` (Memgraph requires sequential execution to avoid connection storms)
-
-### Patterns
-- **Memgraph WHERE-after-YIELD**: `CALL procedure() YIELD x WHERE ...` is NOT valid Memgraph Cypher. Must use `CALL procedure() YIELD x WITH x WHERE ...`.
-- **Memgraph ORDER-BY-after-WHERE**: `WITH x WHERE cond ORDER BY x` is NOT valid. Must use `WITH x WHERE cond WITH x ORDER BY x`.
-- **One vector index per label+property**: Memgraph enforces a single vector index per (label, property) pair. Tests must use stable index names and clean up stale indexes in `beforeAll`.
-- **Windows IPv6/IPv4**: `bolt://localhost:7687` fails on Windows because `localhost` resolves to `::1` (IPv6). Always use `bolt://127.0.0.1:7687`.
-- **Dynamic imports kill coverage**: `await import("./module")` in `beforeAll` prevents Istanbul from instrumenting function bodies. Always use static `import` at module top level.
-- **Memgraph connection storms**: Running 4+ test suites in parallel overwhelms Memgraph (connection closed by server). Use `--runInBand` for integration tests.
-
----
-
-## Session 14 — Lint Analysis & Systematic Fix
-
-### Objective
-Run ESLint and TypeScript static analysis across monorepo. Fix all identified errors and reduce warnings.
-
-### Starting State
-- **418 problems**: 124 errors + 294 warnings
-
-### Changes Made
-
-#### ESLint Config (`eslint.config.js`)
-- Added CJS override (`**/*.cjs`) with Node.js globals, `sourceType: "commonjs"` — eliminated ~96 `no-undef` false positives + ~13 `no-require-imports` errors
-- Added JS override (`**/*.js`) with Node.js globals for config files
-
-#### Unused Variables/Imports (~35 files)
-- Removed unused imports, prefixed unused params/vars with `_` across both workspaces
-- Removed unused `ToolCall` interface from `graph_memory.ts`
-- Changed `catch (_error)` → `catch` in several files
-
-#### Type Improvements (`mem0-ts/src/oss/src/types/index.ts`)
-- `model?: string | any` → `model?: string` (genuine bug fix — `string | any` collapses to `any`)
-- Several `any` → `Record<string, unknown>` improvements
-- Note: `VectorStoreResult.payload` and `LLMConfig.config` must stay `Record<string, any>` (20 cascading TS errors)
-
-#### `no-explicit-any` Reduction — openmemory/ui (~75 warnings fixed)
-- **Catch blocks** (25+): All `catch (e: any)` → `catch (e: unknown)` with `e instanceof Error ? e.message : String(e)` pattern
-- **Route row mappings** (8 routes): Added `runRead<RowType>()` generics to eliminate `(r: any)` in `.map()` callbacks and `rows[0] as any` casts:
-  - `categories/route.ts`, `apps/route.ts`, `access-log/route.ts`, `export/route.ts`, `related/route.ts`, `[memoryId]/route.ts`, `[appId]/route.ts`, config routes
-- **Neo4j Integer coercion** (4 files): `(raw as any)?.low` → `(raw as { low?: number })?.low`
-- **Config typing** (`lib/config/helpers.ts`): Expanded openmemory config type, typed `deepUpdate()` function, removed `as any` casts
-- **Store slices**: `vector: any` → `number[] | null`, `metadata_: Record<string, any>` → `Record<string, unknown>`, `apps: any[]` → `{ id: string; name: string }[]`
-- **Components**: `metadata?: Record<string, any>` → `Record<string, unknown>`, `selectedApp: any` → `RootState['apps']['selectedApp']`, typed `Memory` interface
-- **Helpers**: `_getClosestIcon(): any` → `React.ReactNode`, `Promise<any>` → `Promise<unknown>` for fetch wrappers, `useState<any[]>` → `useState<Memory[]>`
-
-#### `no-explicit-any` Reduction — mem0-ts
-- `mem0.ts`: `client: any` → `AxiosInstance`, `_validateApiKey(): any` → `void`, `args: any[]` → `unknown[]`, `options: any` → `RequestInit`, `payload: any` → `Record<string, unknown>`, 4 catch blocks fixed
-- Note: `_fetchWithErrorHandling` returns `Promise<any>` with eslint-disable (cascading issue)
-
-#### Remaining 134 warnings breakdown:
-- ~100 in mem0-ts internal files (`graph_memory.ts`, `langchain.ts`, `memgraph.ts`, `memory/index.ts`, `mem0.types.ts`) — mostly intentional for library interop and SDK flexibility
-- ~8 in embedding pipeline files with existing eslint-disable comments (HuggingFace transformers interop)
-- ~26 scattered across test mocks and edge cases
-
-### Final State
-- **0 errors** (was 124)
-- **134 warnings** (was 294)
-- **284 problems eliminated** (68% reduction)
-
-### Verification
-- TypeScript: 0 errors in both workspaces (only 2 known pre-existing `.next/types` auto-generated errors)
-- mem0-ts: 17 suites, 291 tests passing
-- openmemory/ui: 24 unit suites, 217 tests passing (10 e2e suites skipped — require Memgraph)
-
-### Patterns
-- **`runRead<T>()`**: Always add generic type parameter at call site to avoid `(r: any)` in `.map()` callbacks and `rows[0] as any` casts
-- **Catch blocks**: Always `catch (e: unknown)` with `e instanceof Error ? e.message : String(e)` narrowing
-- **Neo4j Integer**: Use `(raw as { low?: number })?.low ?? 0` instead of `(raw as any)?.low`
-- **`Record<string, any>` vs `Record<string, unknown>`**: Prefer `unknown` for internal types; keep `any` only for SDK public APIs and library interop where `unknown` causes cascading errors
-- **`string | any`**: This is a bug — collapses to `any`. Always just use `string`
-## Session 9 — Agentic Repo Audit with OpenMemory MCP as LTM (2026-02-26)
-
-### Objective
-Test all 10 OpenMemory MCP tools in a realistic scenario: agentic architect performing a large-repo audit that doesn't fit in a single LLM context window. OpenMemory serves as the long-term memory layer.
-
-### Audit Scope
-- mem0 monorepo (pnpm workspace: mem0-ts + openmemory/ui)
-- ~100+ source files, 30 API routes, 49 test files, 33 lib modules
-
-### Memories Stored: 12
-Covering: monorepo structure, dependency inventory, dev environment, mem0-ts SDK (55 files, 14 LLMs, 7 embedders), test coverage gaps (62% overall), dead config, openmemory/ui architecture (30 routes, 33 lib files), test pyramid (49 files), potential problems (6 issues), DB security posture, MCP server analysis, hybrid search stack.
-
-### Entities Auto-Extracted: 30+
-Examples: openmemory/ui (PRODUCT), mem0-ts (PRODUCT), Factory pattern (PATTERN), Kuzu (PRODUCT), MemoryClient (PRODUCT), Next.js middleware.ts (CONFIGURATION), embedding providers (CONCEPT)
-
-### MCP Tool Ratings
-
-| Tool | Rating | Verdict |
-|------|--------|---------|
-| `add_memories` | ★★★★★ | Essential — but batch >2 items fails with Memgraph transaction conflicts |
-| `search_memory` | ★★★★★ | Excellent hybrid search (0.90-0.99 relevance) — but query is required (no browse mode) |
-| `search_memory_entities` | ★★★★☆ | Smart entity typing — descriptions could synthesize across linked memories |
-| `get_memory_entity` | ★★★★☆ | Full entity profiles with connected entities — solid |
-| `get_memory_map` | ★★★★☆ | Knowledge graph subgraph — CO_OCCURS_WITH edges are noisy |
-| `update_memory` | ★★★★★ | Bi-temporal versioning works correctly |
-| `create_memory_relation` | ★★★★☆ | Explicit relationship creation — works well |
-| `delete_memory_relation` | ★★★☆☆ | Over-parameterized: requires 4 params when ID alone should suffice |
-| `delete_memory_entity` | ★★★★☆ | Clean cascade deletion with informative response |
-| `get_related_memories` | ★★☆☆☆ | Returns empty results for entities that have memories in get_memory_entity |
-
-### Bugs Found
-
-1. **Batch add_memories transaction conflicts** — Promise.all creates parallel Memgraph sessions that conflict. 2 of 3 memories failed, 1 of those was actually stored despite ERROR response.
-2. **get_related_memories inconsistent with get_memory_entity** — Different Cypher paths (HAS_ENTITY vs MENTIONS) return different results for the same entity.
-3. **search_memory query required in schema** — Server code supports browse mode (no query) but MCP Zod schema makes query mandatory.
-4. **Ghost success on add_memories** — Memory stored despite ERROR response; subsequent add returned SKIP_DUPLICATE confirming silent success.
-
-### Missing MCP Tools
-- `delete_memory` (exists as API route, not exposed)
-- `list_memories` (browse without search)
-- `backup/export` + `backup/import`
-- `get_stats`
-- `archive/pause_memory`
-- `get_access_log`
-
-### Parameter Naming Inconsistencies
-- `text` (add) vs `new_text` (update) vs `content` (DB) vs `memory` (response)
-- `entity_id` (get_memory_map, get_memory_entity, delete) vs `entity_name` (get_related_memories)
-- `delete_memory_relation` requires both `relationship_id` AND `source_entity`+`target_entity`+`relationship_type`
-
-### Patterns
-- **Always send 1 memory per add_memories call** — batch writes cause transaction conflicts
-- **get_related_memories and get_memory_entity use different edge traversal** — results are inconsistent
-- **Entity descriptions derived from single memory** — can be misleading; should synthesize
-- **CO_OCCURS_WITH auto-edges create dense cliques** — noisy for graph navigation
-## Session 10 � MCP Bug Fixes: Implementation and Test Repair
-
-### Objective
-Apply all 5 bug fixes identified in Session 9 audit to lib/mcp/server.ts, verify with TypeScript and full test suite.
-
-### Changes Made
-
-#### lib/mcp/server.ts
-1. **Fix 1 - Serial batch writes**: Replaced Promise.all(items.map(...)) with sequential for...of loop using typed MemoryResult[] array. Prevents Memgraph/KuzuDB concurrent write-transaction conflicts.
-2. **Fix 2 - get_related_memories edge bug**: [:HAS_ENTITY] changed to [:MENTIONS] in Memory-Entity Cypher. Added entity-not-found guard and optional entity_id fast-path (skips resolveEntity call).
-3. **Fix 3 - update_memory param rename**: new_text renamed to text. Handler destructuring, supersedeMemory() call, and response new_content field all updated.
-4. **Fix 5 - get_related_memories entity_id**: Schema now accepts optional entity_name OR optional entity_id. Handler resolves via ID directly when available.
-5. **Fix 6 - delete_memory_relation relationship_id**: Added optional relationship_id fast path using MATCH-WITH-DELETE (captures r.relType via WITH before DELETE for Memgraph safety). Name-based path retained as fallback. Count check uses rows[0]?.count ?? rows.length.
-
-#### tests/unit/mcp/tools.test.ts
-- Updated MCP_UPD_01, MCP_UPD_02, MCP_UPD_03 to use text instead of new_text.
-
-### Root Cause: ENT_01/02 Chain Failure
-jest.clearAllMocks() clears call records but NOT queued mockResolvedValueOnce values. update_memory tests used invalid new_text param, MCP validation rejected calls before handlers ran, leaving 3 unconsumed runRead mocks that bled into get_memory_entity describe block causing wrong entity row data. Fix: tests use text so handlers run and consume their mocks.
-
-### Verification
-- tsc --noEmit: 0 errors
-- pnpm test --testPathPattern=mcp --runInBand: 50/50 passed (unit + e2e)
----
-
-## Session 11 — Full Repo Audit via OpenMemory MCP (Long-Term Memory Stress Test)
-
-### Objective
-Use all 10 OpenMemory MCP tools as an agentic architect performing a large-scale repo audit. Generate real architectural findings that don't fit in a single LLM context window, store them in OpenMemory as long-term memory, and produce a final report on MCP tool usefulness.
-
-### Infrastructure Notes
-- **Memgraph crashed 3× during the session** (Rust panic in destructor, Tantivy index writer thread errors). Required `docker-compose down` + `up` each time. This is a significant stability issue for the MCP server's reliability as an LTM backend.
-- **Dev server running OLD code** (Finding #0): The Next.js dev server on port 3001 did NOT hot-reload Session 10's fixes or the previous turn's name-fallback additions. All MCP tool schemas still showed old signatures (`new_text` not `text`, `entity_id` required not optional, `query` required in search, `get_memory_map` requires `entity_id`). The fixes exist on disk but the server was serving stale code.
-
-### MCP Tool Usage Report
-
-#### Call Counts
-
-| Tool | Calls | Successes | Failures | Failure Reasons |
-|------|------:|----------:|---------:|-----------------|
-| `add_memories` | 7 | 5 | 2 | Memgraph crash, Tantivy index writer error |
-| `search_memory` | 3 | 2 | 1 | Browse mode (no query) rejected by old server |
-| `search_memory_entities` | 2 | 2 | 0 | — |
-| `create_memory_relation` | 5 | 4 | 1 | Memgraph crash |
-| `get_memory_entity` | 1 | 1 | 0 | — |
-| `get_memory_map` | 2 | 1 | 1 | Missing required `entity_id` (old server) |
-| `get_related_memories` | 2 | 1 | 1 | Missing required `entity_name` (param confusion) |
-| `update_memory` | 1 | 1 | 0 | Used old `new_text` param name |
-| `delete_memory_relation` | 1 | 1 | 0 | — |
-| `delete_memory_entity` | 0 | — | — | Not exercised (no orphan entities found) |
-| **TOTAL** | **24** | **18** | **6** | **75% success rate** |
-
-#### Per-Tool Usefulness Rating
-
-| Tool | Rating | Notes |
-|------|--------|-------|
-| `add_memories` | ★★★★★ | **Most useful tool.** Batch ingestion of findings, automatic dedup (SKIP_DUPLICATE detected correctly), auto-categorization, entity extraction. Essential for the audit workflow. |
-| `search_memory` | ★★★★★ | **Excellent retrieval.** Hybrid BM25+vector with RRF scores. Returns text_rank + vector_rank for debugging. 10 results per query with relevance_score. Would be ★★★★★+ if browse mode worked (query-less listing). |
-| `search_memory_entities` | ★★★★☆ | Good for entity discovery. Returned rich entity metadata (type, description, memoryCount). Would benefit from filtering by entity type. |
-| `get_memory_entity` | ★★★★★ | **Best single-call data density.** Returns entity + all linked memories + connectedEntities (with weights) + relationships in one call. Perfect for exploring knowledge graph context. |
-| `get_memory_map` | ★★★★☆ | 20KB knowledge graph response with multi-hop traversal. Useful for understanding entity clusters. Painful that old server requires `entity_id` — should work without it for global graph view. |
-| `create_memory_relation` | ★★★★☆ | Clean API. Successfully created typed relationships (PUBLISHED_AS, DEPENDS_ON, HAS_ISSUE). Would benefit from optional `description` parameter. |
-| `get_related_memories` | ★★★☆☆ | Returned entity + relationships correctly, but **memories array was always empty** due to the `[:HAS_ENTITY]` bug on the running server. Degraded usefulness. With the fix (`[:MENTIONS]`), would be ★★★★☆. |
-| `update_memory` | ★★★★★ | Correct bi-temporal SUPERSEDE behavior — preserves old version, creates new ID. Response includes both old and new content for verification. |
-| `delete_memory_relation` | ★★★★☆ | Works cleanly. Name-based triple (source+type+target) is more ergonomic than requiring relationship_id. |
-| `delete_memory_entity` | N/A | Not tested this session. |
-
-#### MCP Design Improvement Recommendations
-
-**P0 — Reliability**
-1. **Memgraph connection resilience**: `runRead`/`runWrite` need retry logic (exponential backoff, 3 attempts). 3 crashes in one session is unacceptable for an LTM backend. The `add_memories` batch writes exacerbate this — 6 concurrent writes can trigger Memgraph transaction conflicts.
-2. **Hot-reload detection**: The dev server should detect code changes to `lib/mcp/server.ts` and restart the MCP transport. Currently, tool schemas are cached at first connection and never refreshed.
-
-**P1 — Ergonomics**
-3. **Browse mode for `search_memory`**: Allow empty/missing `query` to list recent memories (paginated). Critical for agents exploring what's stored without a specific search term.
-4. **`get_memory_map` without `entity_id`**: Should return the global knowledge graph when no entity is specified. Currently rejects the call.
-5. **Batch result reporting**: `add_memories` should return per-item status (success/fail/dedup) even when some items fail. Currently, a mid-batch Memgraph error loses all results — partial success should be reported.
-6. **`get_related_memories` consistency**: Fix the `[:MENTIONS]` edge type (already on disk, needs server reload). This tool is the primary way agents traverse entity→memory relationships.
-
-**P2 — Agent UX**
-7. **Unified ID-or-name resolution**: The Session 10.5 fixes added `entity_name` fallback to `get_memory_entity` and `delete_memory_entity`, and `memory_content` fallback to `update_memory`. This pattern should be applied consistently to ALL tools that accept IDs.
-8. **Tool descriptions for LLM discovery**: Tool descriptions should explicitly mention what the tool returns (e.g., "Returns entity + linked memories + connected entities + relationships"). Agents choose tools based on descriptions.
-9. **Confidence scoring in `search_memory`**: Already present (`confident: true/false`), but threshold is unclear. Document what triggers `confident: false`.
-10. **`create_memory_relation` description field**: Allow an optional `description` parameter to annotate relationships with context (e.g., "version conflict discovered during audit").
-
-### Architectural Findings Summary (Stored in OpenMemory)
-
-**Total findings stored: ~25 memories across 6 audit phases**
-
-#### Critical (P0)
-- Entity resolution N+1: 18-35 sequential DB round-trips per memory write
-- `supersedeMemory()` Spec 09 violation: bare `MATCH Memory` without User anchor
-- No TypeScript CI pipeline for openmemory/ui or mem0-ts
-- `runRead`/`runWrite` has no retry logic for Bolt failures
-
-#### High (P1)
-- `addMemory()` doesn't integrate dedup or entity extraction (route-handler responsibility)
-- Serial writes in `addMemory()` (3 sessions) and `supersedeMemory()` (4 sessions)
-- `updateMemory()` bypasses bi-temporal model (in-place SET destroys history)
-- No auth middleware (user_id is trust-based)
-- Build config masks type/lint errors (`ignoreBuildErrors: true`)
-- N+1 query in GET /api/v1/memories (categories fetched per-memory)
-
-#### Medium (P2)
-- 3 Zod versions coexist (3.24.1, 4.3.6, 3.25.76)
-- openai SDK version split (v4 vs v6)
-- Module singleton not `globalThis`-guarded (HMR driver leaks)
-- Dedup cache uses FIFO not LRU
-- intelli-embed-v3 pipeline init race condition
-- README.md completely outdated
-- `lib/ai/client.ts` hardcoded Azure-only despite docs saying it auto-selects
-- 237 `no-explicit-any` lint warnings
-
-#### Low (P3)
-- Package name "my-v0-project" leftover
-- Dead tsup config in mem0-ts package.json
-- Dead `requireUserId()` middleware never imported
-- `searchMemories()` duplicates `vectorSearch()` (legacy function)
-- mem0ai workspace dependency declared but never imported
-
-### Entity Graph State
-Entities created/discovered by audit: mem0-ts, openmemory/ui, mem0ai, Memgraph, zod, openai-sdk, npm:mem0ai, god-file-1122-lines, and ~30 more auto-extracted entities.
-
-Relationships: mem0-ts →[PUBLISHED_AS]→ npm:mem0ai, openmemory-ui →[DEPENDS_ON]→ openai-sdk, mem0-ts →[HAS_ISSUE]→ god-file-1122-lines, openmemory-ui →[HAS_ISSUE]→ N+1-query-memories-route.
-
-### Was OpenMemory MCP Useful as Long-Term Memory?
-
-**YES — with caveats.**
-
-**What worked well:**
-- Storing 25+ detailed findings across a multi-hour audit that would overflow any context window
-- Retrieving specific findings via hybrid search with high precision (relevance scores 0.87–1.0)
-- Entity extraction automatically built a knowledge graph of the codebase components
-- Dedup correctly caught near-duplicate findings (SKIP_DUPLICATE)
-- SUPERSEDE preserved history when updating findings
-- `get_memory_entity` provided rich context with a single call
-
-**What was painful:**
-- Memgraph instability (3 crashes) caused data loss on in-flight writes — no partial success reporting
-- Old server code running meant 25% of tool calls hit known bugs that are already fixed on disk
-- `get_related_memories` was useless due to the `[:HAS_ENTITY]` bug (empty memories array)
-- Browse mode missing — couldn't list all stored memories without a search query
-- No way to get a "session summary" — had to manually track what was stored vs what was lost to crashes
-
-**Verdict:** OpenMemory MCP is **viable** as an agent LTM solution for large repo audits. The core read/write/search loop works well. The main barriers are infrastructure reliability (Memgraph crashes) and the 3 tool bugs (all already fixed on disk). After those fixes are deployed, this would be a 4/5 star experience.
-
-### Patterns (for AGENTS.md)
-- **Memgraph Tantivy crashes**: Rapid batch writes (especially `add_memories` with 5+ items containing long text) can trigger Tantivy index writer panics. Mitigation: reduce batch sizes, add write delays between batches.
-- **Transaction conflicts after restart**: Memgraph needs 10-15 seconds after restart before accepting writes. The MCP server should implement connection health checks with backoff.
-- **Entity auto-extraction quality**: Extracted entities are sometimes too granular (e.g., "graph_stores/memgraph.ts" as an entity). The extraction prompt could benefit from a minimum significance threshold.
-
----
-
-## Session 12 — Reliability Hardening (Tantivy + Connection Errors)
-
-### Objective
-Investigate and fix the "Connection was closed by server" and "Tantivy error: An index writer was killed" errors observed during MCP tool calls, fix all other audit findings, and cover all fixes with tests.
-
-### Root Causes Identified
-1. **Tantivy "index writer killed"**: Fire-and-forget `processEntityExtraction` from item N still running when item N+1's `addMemory()` writes to Memgraph → concurrent text-index writes → Tantivy worker thread panics.
-2. **"Connection was closed by server"**: No retry logic in `runRead`/`runWrite`. Transient Bolt TCP errors propagated directly to callers.
-3. **Driver singleton not `globalThis`-guarded**: Next.js HMR recreated module → old driver leaked without close → connection pool exhaustion.
-4. **Non-atomic writes**: Multiple runWrite calls per operation created orphan nodes and Bolt session churn.
-
-### Fixes Implemented
-
-#### Fix 1 — `lib/db/memgraph.ts` (connection layer)
-- `getDriver()` now uses `globalThis.__memgraphDriver` — persists across HMR module reloads.
-- Added pool config: `maxConnectionPoolSize: 25`, `connectionAcquisitionTimeout: 10_000`.
-- Added `isTransientError()` (exported) — matches: "Connection was closed by server", "Tantivy error", "index writer was killed", "ServiceUnavailable", "ECONNREFUSED", "ECONNRESET", etc.
-- Added `withRetry<T>(fn, maxAttempts=3, baseDelayMs=300)` (exported) — exponential backoff; invalidates driver on connection errors; resets `_vectorIndexVerified`.
-- `runRead` and `runWrite` now wrapped with `withRetry()`.
-
-#### Fix 2 — `lib/memory/write.ts` (write pipeline atomicity)
-- `addMemory()`: User MERGE + Memory CREATE + App attachment consolidated. App is conditionally inlined in the CREATE query — 2 runWrite calls (User MERGE + atomic Create) regardless of appName.
-- `supersedeMemory()`: 4 → 2 runWrite calls. Steps 1-3 (invalidate old + create new + HAS_MEMORY + SUPERSEDES) combined into one atomic User-anchored query. Fixes Spec 09 namespace isolation violation (old code used bare `MATCH (old/new:Memory {id})` without User anchor).
-
-#### Fix 3 — `lib/mcp/server.ts` (Tantivy concurrency prevention)
-- `add_memories` handler: added `prevExtractionPromise` tracking between batch items.
-- Added `EXTRACTION_DRAIN_TIMEOUT_MS = 3_000`.
-- Before each item: `await Promise.race([prevExtractionPromise, timeout(3000)])` — drains previous item's entity extraction before starting next write. Prevents concurrent Tantivy writers.
-
-#### Fix 4 — `lib/entities/resolve.ts` (atomicity + read/write correctness)
-- Step 2 (normalizedName lookup) changed from `runWrite` to `runRead` — was unnecessarily consuming write sessions for a read-only query.
-- Entity creation: replaced non-atomic two-step (CREATE Entity → separate MERGE HAS_ENTITY) with single atomic User-anchored query: `MATCH (u:User {userId}) CREATE (e:Entity {...}) CREATE (u)-[:HAS_ENTITY]->(e)`. Eliminates orphan Entity node risk.
-
-#### Fix 5 — API route error handling
-- `/api/v1/stats/route.ts`: Added try/catch wrapping entire handler. Returns 500 on DB error.
-- `/api/v1/memories/filter/route.ts`: Added try/catch + proper TypeScript `FilterBody` interface + JSON parse error handling. Returns 400 on invalid JSON, 500 on DB errors.
-- `/api/v1/config/route.ts`: Added try/catch to GET, PUT, PATCH handlers. Returns 500 on error.
-
-### Tests Added / Updated
-
-#### `tests/unit/memgraph.test.ts` — new tests
-- `MG_RETRY_01`: runWrite retries on "Connection was closed by server"
-- `MG_RETRY_02`: runWrite retries on "Tantivy error: index writer was killed"
-- `MG_RETRY_03`: runRead retries on "ServiceUnavailable"
-- `MG_RETRY_04`: non-transient errors (SyntaxError) are NOT retried
-- `MG_RETRY_05`: after 3 transient failures error is propagated
-- `MG_RETRY_06`: driver is invalidated (globalThis cleared) on connection error
-- `MG_DRV_01`: getDriver() stores on globalThis, survives module cache invalidation
-- Updated `MG_11`: clears globalThis before testing no-op behavior
-
-#### `tests/unit/memory/write.test.ts` — updated tests
-- `WR_06`: updated for inline App in CREATE (2 total calls, not 3)
-- `WR_30`: updated for atomic supersedeMemory (1 call with all steps, not 3 separate)
-- `WR_31`: updated for 2 total calls (atomic + App)
-
-#### `tests/unit/entities/resolve.test.ts` — full rewrite
-- Updated ALL tests to reflect new call pattern:
-  - `runRead[0]` for normalizedName lookup (not runWrite)
-  - 1 atomic `runWrite` for CREATE Entity + HAS_ENTITY (not 2 separate)
-- Added `RESOLVE_ATOMIC`: single User-anchored write, no orphan risk
-- Added `RESOLVE_READ_ONLY`: Step 2 uses read session
-
-#### `tests/unit/mcp/tools.test.ts` — new tests
-- `MCP_ADD_DRAIN`: extraction from item N resolves before item N+1's addMemory starts
-- `MCP_ADD_DRAIN_TIMEOUT`: if extraction hangs >3s batch continues (fake timers, 3.1s advance)
-
-### Verification
-- `pnpm exec tsc --noEmit` → exit 0 (zero TypeScript errors)
-- `pnpm test --testPathPattern="tests/unit" --runInBand` → **228 tests, 24 suites, 0 failures**
-
-### Patterns
-- **globalThis singleton test isolation**: Tests that verify "no driver was ever created" must explicitly clear `globalThis.__memgraphDriver = null` in beforeEach or the test body, because globalThis persists across `jest.resetModules()` calls.
-- **Generic type args on `require()` results**: TypeScript TS2347 — can't use `<T>` on `any`-typed functions from `require()`. Use explicit type annotation on the result variable instead.
-- **Tantivy write contention**: Any code that calls multiple `runWrite` sessions concurrently risks Tantivy index writer conflicts. Always drain fire-and-forget extractors before the next write.
-- **Spec 09 namespace isolation**: ALL Cypher queries traversing Memory or Entity nodes MUST anchor through `(u:User {userId: $userId})`. Bare `MATCH (:Memory {id})` without User path violates namespace isolation.
----
-
-## Session 13 — Agentic Architectural Audit (2026-02-27)
-
-### Objective
-Large-scale repo audit as an agentic architect, using OpenMemory MCP as long-term memory to handle context-window overflow. Goal: identify refactoring opportunities and systemic issues across all layers.
-
-### Critical Bug Fixed
-- **lib/memory/write.ts** — Removed `invalidAt: null` literal from `addMemory()` CREATE and `supersedeMemory()` CREATE. Memgraph rejects null literals in property maps.
-- **lib/memory/bulk.ts** — Removed `invalidAt: null` from UNWIND+CREATE Cypher.
-- **4 tests updated** (`bi-temporal-baseline.test.ts` BT01, `bi-temporal.test.ts` BT_01).
-- **Verification**: `pnpm exec jest --no-coverage --runInBand` → **335 tests, 0 failures**.
-
-### Architectural Findings (34 total)
-
-**HIGH (7):**
-- WRITE-002: `deleteAllMemories()` DETACH DELETE destroys `:SUPERSEDES` history
-- ARCH-001: Write path duplicated between REST POST handler and MCP add_memories
-- ENTITY-002: `confirmMergeViaLLM()` has no timeout — can block indefinitely
-- API-001: N+1 query pattern for category fetching (one runRead per memory)
-- CLUSTER-001: Louvain runs on entire graph, not user-scoped subgraph
-- INFRA-001: `specs/` directory is empty — spec docs exist only as code comments
-
-**MEDIUM (15):** DB-002, DB-004, WRITE-001, WRITE-003, WRITE-004, ENTITY-001, ENTITY-003, ENTITY-004, ENTITY-005, SEARCH-001, SEARCH-002, MCP-001, API-002, CONFIG-001, CLUSTER-002, FRONTEND-001, FRONTEND-002, INFRA-002, VALIDATION-001
-
-**LOW (7):** DB-003, DB-005, CONFIG-002, MCP-002, SEARCH-003, FRONTEND-003, VALIDATION-002
-
-See [AUDIT_REPORT_SESSION13.md](AUDIT_REPORT_SESSION13.md) for full details.
-
-### Patterns Added
-- **Null literals in Cypher CREATE**: Memgraph rejects `{prop: null}` in CREATE/MERGE property maps. Absent properties are semantically null — do NOT initialise to null. Use `SET node.prop = null` only when explicitly invalidating.
-- **LLM timeouts required**: Any fire-and-forget or inline LLM call must be wrapped in `Promise.race([call, timeout(N)])` to prevent pipeline stalls.
-- **User anchor in ALL writes**: Entity update queries (`MATCH (e:Entity {id: $entityId})`) must anchor through User for Spec 09 compliance — same rule as Memory queries.
-
-### MCP Tool Effectiveness (this session)
-- `add_memories` (array form): 9 calls, 34 findings stored — most valuable tool
-- `search_memory` (browse): 1 call — full inventory retrieval
-- `search_memory` (search): 1 call — HIGH finding retrieval
-- Tools not used: `create_memory_relation`, `get_memory_map`, `search_memory_entities` — these would have been valuable for building a finding-to-file entity graph
-
----
-
-## Session 15 — Deep Architectural Audit: Frontend + API Security (2026-02-27)
-
-### Objective
-Third audit session as agentic architect. Focus expanded beyond backend to include all API routes, frontend Redux state management, hooks, and type system integrity. Used OpenMemory MCP as LTM for cross-session continuity.
-
-### LTM Recall
-- 2 `search_memory` calls recovered 40 memories from Sessions 11–14
-- Full audit context (specific line numbers, finding IDs, file paths) recovered without re-reading code
-- RRF ranking correctly prioritized audit summaries (0.95–0.98 relevance)
-
-### Findings (22 new)
-
-**HIGH (8):**
-- ENTITY-009: Next.js 15 params not awaited in `entities/[entityId]/route.ts`
-- CONFIG-003: No input validation on config PUT/PATCH — arbitrary key injection
-- CONFIG-004: N+1 write pattern + no auth on config routes
-- CATEGORIZE-001: Bare MATCH + N+1 writes in `categorize.ts`
-- FRONTEND-003: Stale closure in `useMemoriesApi.ts` — data loss risk
-- FRONTEND-004: Conflicting Category types (`string` vs `{ id, name, ... }`)
-- FRONTEND-005: `useStats.fetchStats` never resets `isLoading` on success
-- FRONTEND-008: Missing `user_id` on `fetchAppAccessedMemories` — Spec 09 violation
-
-**MEDIUM (9):**
-- ENTITY-010/011: Bare Memory MATCH + wrong count in entity routes
-- LINK-001: `linkMemoryToEntity()` missing User anchor
-- API-005: `apps/route.ts` no try/catch + missing bi-temporal filter
-- API-006: `memories/[memoryId]/route.ts` no try/catch + inconsistent response
-- FRONTEND-006: Dual-state anti-pattern (local useState + Redux) across all hooks
-- FRONTEND-007: 1024-dim vectors in Redux client state + dead filter actions
-- MCP-005: `activeTransports` module export causes TS2344 error
-- VECTORSEARCH-001: Session 14 SEARCH-002 partially mitigated
-
-**LOW (5):** STATS-001, CLUSTERS-001, EXTRACT-001, CONTEXT-001, FRONTEND-009
-
-### Key Insight
-The **frontend layer has more HIGH severity issues (5) than the backend**. Stale closure bug, stuck loading spinner, and namespace isolation violation are user-facing defects that would manifest in production. Prior sessions focused almost exclusively on the data layer.
-
-### Files Read (30+)
-write.ts (292), memgraph.ts (363), bulk.ts (204), server.ts (1234), hybrid.ts (132), resolve.ts (336), worker.ts (80), dedup/index.ts (121), config/helpers.ts (135), link.ts (28), vector.ts (68), text.ts (50), all API routes (stats, entities, clusters, apps, config, memories/*, backup/*), all Redux slices (store, memoriesSlice, appsSlice, filtersSlice, profileSlice, uiSlice), all hooks (useMemoriesApi, useAppsApi, useFiltersApi, useStats, useUI), extract.ts, categorize.ts, context.ts, search.ts
-
-### MCP Tool Usage
-| Tool | Calls | Items | Verdict |
-|------|-------|-------|---------|
-| `search_memory` | 2 | 40 recalled | Excellent — full cross-session continuity |
-| `add_memories` | 4 | 22 stored | Excellent — correct dedup, no false SUPERSEDE |
-
-### Unfixed HIGH from Prior Sessions
-- ENTITY-006 (S13/14): worker.ts bare MATCH — **still unfixed**
-- ARCH-001-DEEP (S14): 3-way write pipeline duplication — **still unfixed**
-- ARCH-002 (S14): server.ts God File — **still unfixed**
-- INFRA-002 (S14): Unvalidated backup import — **still unfixed**
-- API-003 (S14): backup/export no User anchor — **still unfixed**
-
-### Verification
-- 334 tests passing, 45 suites
-- 2 tsc errors: entities params (pre-existing) + MCP SSE activeTransports (MCP-005)
-- Full audit report: [AUDIT_REPORT_SESSION15.md](AUDIT_REPORT_SESSION15.md)
+## Known Pre-existing Issues
+
+| ID | File | Description |
+|----|------|-------------|
+| TS-001 | `app/api/v1/entities/[entityId]/route.ts` | `.next/types` TS2344 error (activeTransports in MCP SSE) — Next.js type generation artifact, ignore |
+| TEST-001 | `tests/unit/entities/resolve.test.ts` | 3 tests require live Memgraph for semantic dedup — skip in CI |
+| E2E-001 | `tests/e2e/06-search.test.ts` | Requires running Memgraph + populated data — skip in CI |
 
 ---
 
 ## Session 16 — 2-Tool MCP Architecture Refactor
 
 ### Objective
-Collapse the 10-tool MCP API surface to 2 tools (`add_memories` + `search_memory`) with server-side intent classification and entity-aware search enrichment. Motivated by the Session 15 finding that only `search_memory` (5 calls) and `add_memories` (17 calls) were used across 3 audit sessions — 8 tools had zero usage.
+Collapse 10-tool MCP API to 2 tools (`add_memories` + `search_memory`) with server-side intent classification and entity-aware search enrichment. Prior 3 audit sessions used only `search_memory` (5 calls) + `add_memories` (17 calls) — 8 tools had zero usage.
 
-### Architecture
+### Architecture Change
 
 **Before:** 10 tools — `add_memories`, `search_memory`, `update_memory`, `search_memory_entities`, `get_memory_entity`, `get_related_memories`, `get_memory_map`, `create_memory_relation`, `delete_memory_relation`, `delete_memory_entity`
 
 **After:** 2 tools — `add_memories` (writes + intent classification) + `search_memory` (reads + entity enrichment)
 
-Intent classification (`classifyIntent`):
-- Fast regex pre-filter (`mightBeCommand()`) — skips LLM for obvious facts
-- LLM fallback — structured JSON prompt with 3 intents: STORE, INVALIDATE, DELETE_ENTITY
-- Fail-open: any error defaults to STORE (isolated try/catch around classify, separate from write pipeline catch)
+**Intent classification (`classifyIntent`)**:
+1. Fast regex pre-filter `mightBeCommand()` — skips LLM for obvious facts
+2. LLM fallback — structured JSON prompt: `STORE | INVALIDATE | DELETE_ENTITY`
+3. Fail-open: any error → `STORE` (isolated try/catch, separate from write-pipeline catch)
 
-Entity enrichment in `search_memory`:
-- `searchEntities(query, userId, { limit: 5 })` auto-enriches search results
-- Best-effort (try/catch, never blocks search results)
-- `include_entities` param (default true) allows opting out
+**Entity enrichment in `search_memory`**: `searchEntities(query, userId, { limit: 5 })` auto-enriches results; best-effort; `include_entities` param (default `true`).
 
-### Files Created
-1. `lib/mcp/classify.ts` (~105 lines) — Intent classifier
-2. `lib/mcp/entities.ts` (~230 lines) — searchEntities, invalidateMemoriesByDescription, deleteEntityByNameOrId
+### Files Changed
+1. `lib/mcp/classify.ts` (new, ~105 lines) — intent classifier
+2. `lib/mcp/entities.ts` (new, ~230 lines) — `searchEntities`, `invalidateMemoriesByDescription`, `deleteEntityByNameOrId`
+3. `lib/mcp/server.ts` — rewritten 1234 → ~430 lines; removed 8 tools; version `2.0.0`
+4. `tests/unit/mcp/tools.test.ts` — removed 8 deprecated blocks; added MCP_ADD_09/10/11, MCP_SM_05/06
 
-### Files Modified
-3. `lib/mcp/server.ts` — Rewritten from 1234 to ~430 lines. Removed 8 tools, added intent classification step + entity enrichment. Server version bumped to 2.0.0.
-4. `tests/unit/mcp/tools.test.ts` — Removed 8 deprecated tool test blocks (~650 lines). Added 5 new tests: MCP_ADD_09 (INVALIDATE), MCP_ADD_10 (DELETE_ENTITY), MCP_ADD_11 (fail-open), MCP_SM_05 (entity enrichment), MCP_SM_06 (include_entities=false). Preserved extraction drain tests.
+### Bugs Fixed During Implementation
+1. `classifyIntent` threw inside outer try/catch → memory became ERROR event (lost). Fix: isolated try/catch with STORE fallback.
+2. PowerShell `Set-Content -Encoding utf8` corrupted multi-byte UTF-8. Fix: delete + recreate file with `create_file`.
+3. Orphaned `mockResolvedValueOnce` from MCP_ADD_11 leaked into drain tests. Fix: fail-open server fix consumed the mock.
 
-### Bugs Found & Fixed During Implementation
-1. **Fail-open classification error**: `classifyIntent` threw inside the outer try/catch, turning the memory into an ERROR event instead of storing it. Fix: isolated try/catch around `classifyIntent` with explicit STORE fallback.
-2. **PowerShell encoding corruption**: `Set-Content -Encoding utf8` corrupted UTF-8 multi-byte characters. Fix: delete + recreate file with `create_file`.
-3. **Test interaction leak**: MCP_ADD_11's unconsumed `mockResolvedValueOnce` leaked into drain tests. Fix: the fail-open server fix ensures the mock is consumed, and drain tests run clean.
+### Type Contract Notes
+- `invalidateMemoriesByDescription` returns `Array<{id, content}>`, not a count
+- `DeleteEntityResult.entity` is a `string` (name), not an object
+- `HybridSearchResult`: `rrfScore` (not `score`), `categories`/`appName`/`createdAt` (no `updatedAt`)
+- `EntityProfile.relationships`: all four fields required — `source`, `type`, `target`, `description`
 
 ### Verification
-- `tsc --noEmit`: 2 pre-existing errors only (entities params, activeTransports)
+- `tsc --noEmit`: 2 pre-existing errors only
 - `jest --runInBand`: 315 tests, 45 suites, 0 failures
-- MCP tool tests: 31 tests, all passing
 
-## Patterns
+---
 
-- **classifyIntent fail-open**: Always wrap `classifyIntent()` in its own try/catch with STORE default. The outer write-pipeline catch converts errors to ERROR events, which would lose the memory.
-- **invalidateMemoriesByDescription** returns `Array<{id, content}>`, not a count.
-- **DeleteEntityResult.entity** is a string (entity name), not an object.
-- **HybridSearchResult** fields: `rrfScore` (not `score`), `categories`/`appName`/`createdAt` (no `updatedAt`).
-- **EntityProfile.relationships** require `source`, `type`, `target`, `description` (all four fields).
+## Session 18 — Audit Findings Implementation (P1–P3)
+
+### Objective
+Implement 6 findings from the Session 17 architect audit.
+
+### Changes Made
+
+#### DB-01 — `runTransaction()` (lib/db/memgraph.ts)
+`runTransaction(steps: Array<{cypher, params?}>): Promise<T[][]>` — multiple Cypher statements in a single Bolt write transaction with auto-rollback. Wrapped with `withRetry()`.
+
+#### API-01 — Eliminate N+1 Category Fetch (app/api/v1/memories/route.ts)
+Both `GET /api/v1/memories` code paths had a per-memory `runRead` in a `for` loop. Replaced with:
+```cypher
+UNWIND $ids AS memId
+MATCH (m:Memory {id: memId})-[:HAS_CATEGORY]->(c:Category)
+RETURN memId AS id, c.name AS name
+```
+`Map<id, string[]>` built once; loop does O(1) lookups.
+
+#### MCP-02 — Global Drain Budget (lib/mcp/server.ts)
+Added `BATCH_DRAIN_BUDGET_MS = 12_000` and `batchDrainDeadline = Date.now() + BATCH_DRAIN_BUDGET_MS`. Each drain: `Math.min(PER_ITEM_DRAIN_MAX_MS, batchDrainDeadline - Date.now())`. Bounds total drain across entire batch.
+
+#### P3 — Tags on Memory (multiple files)
+- `AddMemoryOptions.tags?: string[]`; Memory CREATE: `tags: $tags` (default `[]`)
+- `HybridSearchResult.tags: string[]`; hydration: `coalesce(m.tags, []) AS tags`
+- `addMemoriesSchema` gains `tags?: string[]`; SUPERSEDE path writes `SET m.tags`
+- `searchMemorySchema` gains `tag?: string`; browse WHERE: `AND ANY(t IN coalesce(m.tags, []) WHERE toLower(t) = toLower($tag))`; search: post-filter on `r.tags`
+
+#### MCP-01 — Browse-mode Param Safety (lib/mcp/server.ts)
+Browse mode was passing `{ userId, category: undefined }`. Now builds `browseParams` conditionally — `category` and `tag` only added when truthy.
+
+#### ENTITY-01 — Tier 1 UNWIND Batch (lib/entities/worker.ts)
+Added UNWIND Tier 1 query before per-entity `resolveEntity()` loop:
+```cypher
+UNWIND $normNames AS normName
+MATCH (u:User {userId: $userId})-[:HAS_ENTITY]->(e:Entity)
+WHERE e.normalizedName = normName
+RETURN normName, e.id AS entityId
+```
+Tier 1 hits use cached `entityId`; only misses call full `resolveEntity()`.
+
+### Files Modified
+1. `lib/db/memgraph.ts` — `runTransaction()`
+2. `lib/memory/write.ts` — `tags` on `AddMemoryOptions` + Memory node
+3. `lib/search/hybrid.ts` — `HybridSearchResult.tags` + hydration Cypher
+4. `app/api/v1/memories/route.ts` — UNWIND batch replaces two N+1 loops
+5. `lib/mcp/server.ts` — drain budget, tags schema+filter, browse param fix
+6. `lib/entities/worker.ts` — Tier 1 UNWIND + local `normalizeName`
+7. `tests/unit/mcp/tools.test.ts` — `tags: []` on two `HybridSearchResult` mocks
+8. `tests/unit/entities/worker.test.ts` — WORKER_01 gains third `mockRunRead` for Tier 1
+
+### Verification
+- `tsc --noEmit`: 1 pre-existing error only
+- `jest --runInBand`: 368 tests, 47 suites, 0 failures
+
+---
+
+## Session 19 — Test Coverage for Session 18 Fixes
+
+### Objective
+Add unit tests for every Session 18 fix. Verified 384/384 tests pass.
+
+### Tests Added
+
+#### tests/unit/memgraph.test.ts
+- **MG_TX_01**: `runTransaction` executes all steps, commits, returns deserialized rows (string values to avoid neo4j integer wrapping)
+- **MG_TX_02**: rolls back when a step throws; commit NOT called
+- **MG_TX_03**: closes session even when commit throws
+- Added `mockTx = { run, commit, rollback }` + `beginTransaction` to `mockSession`
+
+#### tests/unit/memory/write.test.ts
+- **WR_12**: `addMemory` passes tags array in CREATE params
+- **WR_13**: `addMemory` defaults tags to `[]` when none provided
+
+#### tests/unit/entities/worker.test.ts
+- **WORKER_06**: Tier 1 UNWIND hit → `resolveEntity` NOT called; cached entityId used
+- **WORKER_07**: Tier 1 miss → `resolveEntity` called as fallback
+
+#### tests/unit/routes/memories-batch-categories.test.ts (new file)
+- **ROUTE_CAT_01**: list path — 3 memories → ONE UNWIND+HAS_CATEGORY query; categories distributed correctly
+- **ROUTE_CAT_02**: search path — N results → ONE UNWIND query
+- **ROUTE_CAT_03**: category filter — only matching memories returned
+- **ROUTE_CAT_04**: empty list — no UNWIND query issued
+
+#### tests/unit/mcp/tools.test.ts (new describe blocks)
+- **MCP_TAG_01**: `add_memories(tags:[...])` passes tags to `addMemory` AND writes `SET m.tags`
+- **MCP_TAG_02**: `search_memory(tag:...)` filters case-insensitively
+- **MCP_TAG_03**: browse with tag → `runRead` params/Cypher contain tag filter
+- **MCP_BROWSE_NO_UNDEF_PARAMS**: browse without tag/category → no undefined keys in `runRead` params
+- **MCP_ADD_DRAIN_GLOBAL_BUDGET**: 5-item batch with hanging extractions completes once 12s budget exhausted
+
+### Bugs Found During Test Writing
+1. `buildPageResponse` returns `{ items }` not `{ results }` — route test assertions updated.
+2. `makeRecord({ a: 1 })` wraps as `{ low, high, toNumber }` — MG_TX_01 switched to string values.
+3. `jest.clearAllMocks()` does NOT clear `specificReturnValues` queue — added `mockRunRead.mockReset()` in new `beforeEach` blocks.
+
+### Verification
+- `jest --runInBand --no-coverage`: **384 tests, 48 suites, 0 failures**
+- `tsc --noEmit`: 1 pre-existing error only

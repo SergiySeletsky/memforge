@@ -54,6 +54,7 @@ const searchMemorySchema = {
   category: z.string().optional().describe("Filter to memories in this category only"),
   created_after: z.string().optional().describe("ISO date -- only return memories created after this date (e.g. '2026-02-01')"),
   include_entities: z.boolean().optional().describe("Include matching entity profiles in search results (default: true for search mode). Set false to skip entity enrichment for faster responses."),
+  tag: z.string().optional().describe("Exact tag filter -- returns only memories tagged with this string (case-insensitive). Tags are set via add_memories(tags: [...])."),
 };
 const addMemoriesSchema = {
   content: z
@@ -75,6 +76,14 @@ const addMemoriesSchema = {
       "Well-known categories: Personal, Work, Health, Finance, Travel, Education, Entertainment, " +
       "Food, Technology, Sports, Social, Shopping, Family, Goals, Preferences -- but any string is accepted."
     ),
+  tags: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Optional exact-match tags for scoped retrieval (e.g. ['audit-session-17', 'prod-incident']). " +
+      "Tags are stored on the Memory node and enable precise filtering via search_memory(tag: '...'). " +
+      "Unlike categories (semantic labels auto-assigned by LLM), tags are verbatim identifiers you control."
+    ),
 };
 
 export function createMcpServer(userId: string, clientName: string): McpServer {
@@ -92,7 +101,7 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
         "Pass a single string or array of strings for batch processing.",
       inputSchema: addMemoriesSchema,
     },
-    async ({ content, categories: explicitCategories }) => {
+    async ({ content, categories: explicitCategories, tags: explicitTags }) => {
       if (!userId) return { content: [{ type: "text", text: "Error: user_id not provided" }] };
       if (!clientName) return { content: [{ type: "text", text: "Error: client_name not provided" }] };
 
@@ -114,12 +123,14 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
          * near-duplicate check completes before the next item's write begins.
          *
          * Tantivy write-conflict prevention: entity extraction from the PREVIOUS item
-         * is awaited (up to EXTRACTION_DRAIN_TIMEOUT_MS) before the next write starts.
-         * This prevents two concurrent write sessions from hitting Memgraph's text-index
-         * writer simultaneously, which causes "Tantivy error: index writer was killed".
+         * is awaited (up to PER_ITEM_DRAIN_MAX_MS) before the next write starts.
+         * A global BATCH_DRAIN_BUDGET_MS cap prevents the drain from consuming more
+         * than ~12 s total across the whole batch (MCP-02).
          * runWrite() also retries on transient Tantivy errors as a defense-in-depth.
          */
-        const EXTRACTION_DRAIN_TIMEOUT_MS = 3_000;
+        const PER_ITEM_DRAIN_MAX_MS = 3_000;
+        const BATCH_DRAIN_BUDGET_MS = 12_000; // global cap across the entire batch
+        const batchDrainDeadline = Date.now() + BATCH_DRAIN_BUDGET_MS;
 
         type MemoryResult =
           | { id: string;   memory: string; event: "ADD" | "SUPERSEDE" | "SKIP_DUPLICATE" }
@@ -132,11 +143,12 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
 
         for (const text of items) {
           // Drain previous item's entity extraction before starting the next write,
-          // capped at EXTRACTION_DRAIN_TIMEOUT_MS to avoid blocking the batch indefinitely.
+          // capped per-item and by the remaining global budget (MCP-02).
           if (prevExtractionPromise) {
+            const remaining = Math.max(0, batchDrainDeadline - Date.now());
             await Promise.race([
               prevExtractionPromise,
-              new Promise<void>((r) => setTimeout(r, EXTRACTION_DRAIN_TIMEOUT_MS)),
+              new Promise<void>((r) => setTimeout(r, Math.min(PER_ITEM_DRAIN_MAX_MS, remaining))),
             ]);
             prevExtractionPromise = null;
           }
@@ -187,10 +199,21 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
                 userId,
                 appName: clientName,
                 metadata: { source_app: "openmemory", mcp_client: clientName },
+                tags: explicitTags,
               });
             }
 
             const event = dedup.action === "supersede" ? "SUPERSEDE" : "ADD";
+
+            // Write explicit tags to the memory node (for both ADD and SUPERSEDE).
+            // supersedeMemory() creates a new node without tags, so we patch them here.
+            if (explicitTags && explicitTags.length > 0) {
+              await runWrite(
+                `MATCH (u:User {userId: $userId})-[:HAS_MEMORY]->(m:Memory {id: $memId})
+                 SET m.tags = $tags`,
+                { userId, memId: id, tags: explicitTags }
+              ).catch((e: unknown) => console.warn("[explicit tags]", e));
+            }
 
             // Write explicit categories (if provided) immediately after the memory is created.
             // The LLM auto-categorizer (inside addMemory/supersedeMemory) still runs
@@ -218,12 +241,12 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
           }
         }
 
-        // Drain the last item's entity extraction (fire-and-forget to caller,
-        // but we still want it to finish before the session tears down)
+        // Drain the last item's entity extraction, respecting the remaining global budget (MCP-02)
         if (prevExtractionPromise) {
+          const remaining = Math.max(0, batchDrainDeadline - Date.now());
           await Promise.race([
             prevExtractionPromise,
-            new Promise<void>((r) => setTimeout(r, EXTRACTION_DRAIN_TIMEOUT_MS)),
+            new Promise<void>((r) => setTimeout(r, remaining)),
           ]);
         }
 
@@ -262,7 +285,7 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
         "offset/limit pagination -- use on cold-start to see what is already known.",
       inputSchema: searchMemorySchema,
     },
-    async ({ query, limit, offset, category, created_after, include_entities }) => {
+    async ({ query, limit, offset, category, created_after, include_entities, tag }) => {
       if (!userId) return { content: [{ type: "text", text: "Error: user_id not provided" }] };
       if (!clientName) return { content: [{ type: "text", text: "Error: client_name not provided" }] };
 
@@ -275,22 +298,29 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
         if (browseMode) {
           const effectiveLimit = Math.min(limit ?? 50, 200);
           const effectiveOffset = offset ?? 0;
-          console.log(`[MCP] search_memory browse userId=${userId} limit=${effectiveLimit} offset=${effectiveOffset} category=${category}`);
+          console.log(`[MCP] search_memory browse userId=${userId} limit=${effectiveLimit} offset=${effectiveOffset} category=${category} tag=${tag}`);
+
+          // Build params without undefined values — Memgraph warns on unused params (MCP-01)
+          const browseParams: Record<string, unknown> = { userId, offset: effectiveOffset, limit: effectiveLimit };
+          if (category) browseParams.category = category;
+          if (tag) browseParams.tag = tag;
 
           const countRows = await runRead<{ total: number }>(
             `MATCH (u:User {userId: $userId})-[:HAS_MEMORY]->(m:Memory)
              WHERE m.invalidAt IS NULL AND m.state <> 'deleted'
+             ${tag ? `AND ANY(t IN coalesce(m.tags, []) WHERE toLower(t) = toLower($tag))` : ""}
              ${category ? `MATCH (m)-[:HAS_CATEGORY]->(cFilter:Category) WHERE toLower(cFilter.name) = toLower($category)` : ""}
              RETURN count(m) AS total`,
-            { userId, category }
+            browseParams
           );
           const total = countRows[0]?.total ?? 0;
 
           const rows = await runRead<{
-            id: string; content: string; createdAt: string; updatedAt: string; categories: string[];
+            id: string; content: string; createdAt: string; updatedAt: string; categories: string[]; tags: string[];
           }>(
             `MATCH (u:User {userId: $userId})-[:HAS_MEMORY]->(m:Memory)
              WHERE m.invalidAt IS NULL AND m.state <> 'deleted'
+             ${tag ? `AND ANY(t IN coalesce(m.tags, []) WHERE toLower(t) = toLower($tag))` : ""}
              ${category ? `MATCH (m)-[:HAS_CATEGORY]->(cFilter:Category) WHERE toLower(cFilter.name) = toLower($category)` : ""}
              OPTIONAL MATCH (m)-[:HAS_CATEGORY]->(c:Category)
              WITH m, collect(c.name) AS categories
@@ -299,8 +329,8 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
              LIMIT $limit
              RETURN m.id AS id, m.content AS content,
                     m.createdAt AS createdAt, m.updatedAt AS updatedAt,
-                    categories`,
-            { userId, offset: effectiveOffset, limit: effectiveLimit, category }
+                    categories, coalesce(m.tags, []) AS tags`,
+            browseParams
           );
 
           console.log(`[MCP] search_memory browse done in ${Date.now() - t0}ms count=${rows.length} total=${total}`);
@@ -318,6 +348,7 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
                   created_at: m.createdAt,
                   updated_at: m.updatedAt,
                   categories: m.categories ?? [],
+                  tags: m.tags ?? [],
                 })),
               }, null, 2),
             }],
@@ -335,7 +366,7 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
           mode: "hybrid",
         });
 
-        // Apply optional post-filters (category, date)
+        // Apply optional post-filters (category, date, tag)
         let filtered = results;
         if (category) {
           const catLower = category.toLowerCase();
@@ -343,6 +374,12 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
         }
         if (created_after) {
           filtered = filtered.filter(r => r.createdAt >= created_after);
+        }
+        if (tag) {
+          const tagLower = tag.toLowerCase();
+          filtered = filtered.filter(r =>
+            Array.isArray(r.tags) && r.tags.some((t: string) => t.toLowerCase() === tagLower)
+          );
         }
 
         console.log(`[MCP] search_memory search done in ${Date.now() - t0}ms hits=${results.length} filtered=${filtered.length}`);

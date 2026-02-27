@@ -764,7 +764,7 @@ describe("MCP Tool Handlers -- search_memory entity enrichment", () => {
 
   it("MCP_SM_05: search response includes entity profiles when found", async () => {
     mockHybridSearch.mockResolvedValueOnce([
-      { id: "m1", content: "Alice works at Acme", rrfScore: 0.03, textRank: 1, vectorRank: 1, categories: ["work"], createdAt: "2024-01-01", appName: "test-client" },
+      { id: "m1", content: "Alice works at Acme", rrfScore: 0.03, textRank: 1, vectorRank: 1, categories: ["work"], tags: [], createdAt: "2024-01-01", appName: "test-client" },
     ]);
     mockRunRead.mockResolvedValueOnce([{ appName: "test-client", lastAccessed: "2024-01-01" }]);
     mockSearchEntities.mockResolvedValueOnce([
@@ -794,7 +794,7 @@ describe("MCP Tool Handlers -- search_memory entity enrichment", () => {
 
   it("MCP_SM_06: include_entities=false skips entity enrichment", async () => {
     mockHybridSearch.mockResolvedValueOnce([
-      { id: "m1", content: "Alice works at Acme", rrfScore: 0.03, textRank: 1, vectorRank: 1, categories: ["work"], createdAt: "2024-01-01", appName: "test-client" },
+      { id: "m1", content: "Alice works at Acme", rrfScore: 0.03, textRank: 1, vectorRank: 1, categories: ["work"], tags: [], createdAt: "2024-01-01", appName: "test-client" },
     ]);
     mockRunRead.mockResolvedValueOnce([{ appName: "test-client", lastAccessed: "2024-01-01" }]);
 
@@ -911,6 +911,190 @@ describe("MCP add_memories -- extraction drain (Tantivy concurrency prevention)"
     expect(parsed.results[1].id).toBe("id-2");
     // The extraction was NOT yet resolved (we only advanced 3.1 s, timeout is 10 s)
     expect(hangResolved).toBe(false);
+
+    jest.useRealTimers();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NEW: tags support in add_memories / search_memory (Session 18 audit fix)
+// ---------------------------------------------------------------------------
+describe("MCP Tool Handlers — tags support", () => {
+  let client: Client;
+
+  beforeAll(async () => {
+    ({ client } = await setupClientServer());
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // mockReset clears the Once queue too (clearAllMocks only clears call history).
+    // Needed because entity-enrichment tests queue mockRunRead.Once values that are
+    // never consumed (the search path uses no runRead), and they'd leak into these tests.
+    mockRunRead.mockReset();
+    mockRunRead.mockResolvedValue([]);
+    mockRunWrite.mockResolvedValue([]);
+    mockClassifyIntent.mockResolvedValue({ type: "STORE" as const });
+    mockSearchEntities.mockResolvedValue([]);
+  });
+
+  it("MCP_TAG_01: add_memories with tags passes them to addMemory and writes SET m.tags", async () => {
+    mockCheckDeduplication.mockResolvedValueOnce({ action: "add" } as any);
+    mockAddMemory.mockResolvedValueOnce("tag-mem-id");
+    mockProcessEntityExtraction.mockResolvedValueOnce(undefined);
+
+    const result = await client.callTool({
+      name: "add_memories",
+      arguments: { content: "Alice prefers dark mode", tags: ["audit-17", "ux"] },
+    });
+
+    const parsed = parseToolResult(result as any) as any;
+    expect(parsed.results[0].event).toBe("ADD");
+    expect(parsed.results[0].id).toBe("tag-mem-id");
+
+    // addMemory called with tags in opts
+    expect(mockAddMemory).toHaveBeenCalledWith(
+      "Alice prefers dark mode",
+      expect.objectContaining({ tags: ["audit-17", "ux"] })
+    );
+
+    // runWrite called with SET m.tags patch
+    const tagWriteCalls = mockRunWrite.mock.calls.filter(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("SET m.tags")
+    );
+    expect(tagWriteCalls).toHaveLength(1);
+    expect((tagWriteCalls[0][1] as Record<string, unknown>).tags).toEqual(["audit-17", "ux"]);
+  });
+
+  it("MCP_TAG_02: search_memory(tag) filters hybrid results to only matching tag (case-insensitive)", async () => {
+    mockHybridSearch.mockResolvedValueOnce([
+      { id: "m1", content: "Tagged mem",   rrfScore: 0.05, textRank: 1, vectorRank: 1, createdAt: "2026-01-15", categories: [], tags: ["session-17", "prod"] },
+      { id: "m2", content: "Other mem",    rrfScore: 0.04, textRank: 2, vectorRank: 2, createdAt: "2026-01-14", categories: [], tags: ["other-tag"] },
+      { id: "m3", content: "No tags mem",  rrfScore: 0.03, textRank: 3, vectorRank: 3, createdAt: "2026-01-13", categories: [], tags: [] },
+    ] as any);
+    mockRunWrite.mockResolvedValueOnce([]);
+
+    const result = await client.callTool({
+      name: "search_memory",
+      arguments: { query: "Alice", tag: "SESSION-17" },  // upper-case to verify case-insensitive
+    });
+
+    const parsed = parseToolResult(result as any) as any;
+    // Only m1 has "session-17" (case-insensitively)
+    expect(parsed.results).toHaveLength(1);
+    expect(parsed.results[0].id).toBe("m1");
+  });
+
+  it("MCP_TAG_03: browse mode with tag passes tag to runRead and includes tag clause in Cypher", async () => {
+    mockRunRead
+      .mockResolvedValueOnce([{ total: 1 }])
+      .mockResolvedValueOnce([
+        { id: "m1", content: "Test mem", createdAt: "2026-01-01", updatedAt: "2026-01-01", categories: [] },
+      ]);
+
+    const result = await client.callTool({
+      name: "search_memory",
+      arguments: { tag: "session-17" },  // no query → browse mode
+    });
+
+    const parsed = parseToolResult(result as any) as any;
+    expect(parsed).toHaveProperty("total", 1);
+    expect(parsed.results).toHaveLength(1);
+
+    // Count query params must include tag
+    const countParams = mockRunRead.mock.calls[0][1] as Record<string, unknown>;
+    expect(countParams).toHaveProperty("tag", "session-17");
+
+    // Count query Cypher must filter by tag
+    const countCypher = mockRunRead.mock.calls[0][0] as string;
+    expect(countCypher).toContain("toLower($tag)");
+
+    // List query params must also include tag
+    const listParams = mockRunRead.mock.calls[1][1] as Record<string, unknown>;
+    expect(listParams).toHaveProperty("tag", "session-17");
+  });
+
+  it("MCP_BROWSE_NO_UNDEF_PARAMS: browse without tag/category — no undefined keys in runRead params", async () => {
+    mockRunRead
+      .mockResolvedValueOnce([{ total: 0 }])
+      .mockResolvedValueOnce([]);
+
+    await client.callTool({
+      name: "search_memory",
+      arguments: {},  // no tag, no category
+    });
+
+    for (const call of mockRunRead.mock.calls) {
+      const params = call[1] as Record<string, unknown>;
+      if (params && typeof params === "object") {
+        expect(params).not.toHaveProperty("tag");
+        expect(params).not.toHaveProperty("category");
+        // Ensure no value is undefined (would cause Memgraph to error)
+        for (const val of Object.values(params)) {
+          expect(val).not.toBeUndefined();
+        }
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NEW: Global drain budget cap across entire batch (MCP-02)
+// ---------------------------------------------------------------------------
+describe("MCP add_memories — global drain budget (MCP-02)", () => {
+  let client: Client;
+
+  beforeAll(async () => {
+    ({ client } = await setupClientServer());
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRunRead.mockReset(); // clear orphaned Once values from prior describe blocks
+    mockRunRead.mockResolvedValue([]);
+    mockRunWrite.mockResolvedValue([]);
+    mockClassifyIntent.mockResolvedValue({ type: "STORE" as const });
+    mockSearchEntities.mockResolvedValue([]);
+  });
+
+  it("MCP_ADD_DRAIN_GLOBAL_BUDGET: 5-item batch with hanging extractions completes once 12 s budget exhausted", async () => {
+    jest.useFakeTimers({ advanceTimers: false });
+
+    // All 5 items: dedup → add → extraction hangs for 10 s each
+    mockCheckDeduplication
+      .mockResolvedValue({ action: "add" } as any);
+    mockAddMemory
+      .mockResolvedValueOnce("id-1")
+      .mockResolvedValueOnce("id-2")
+      .mockResolvedValueOnce("id-3")
+      .mockResolvedValueOnce("id-4")
+      .mockResolvedValueOnce("id-5");
+
+    const extractionSettled: boolean[] = [false, false, false, false, false];
+    mockProcessEntityExtraction.mockImplementation(async () => {
+      const i = mockProcessEntityExtraction.mock.calls.length - 1;
+      await new Promise<void>((r) => setTimeout(r, 10_000));
+      extractionSettled[i] = true;
+    });
+
+    const callPromise = client.callTool({
+      name: "add_memories",
+      arguments: { content: ["Item 1", "Item 2", "Item 3", "Item 4", "Item 5"] },
+    });
+
+    // Advance timers by 15 s — this covers both the per-item 3 s caps
+    // AND exhausts the 12 s global budget so remaining items get 0 ms drain.
+    await jest.advanceTimersByTimeAsync(15_000);
+
+    const result = await callPromise;
+    const parsed = parseToolResult(result as any) as any;
+
+    // All 5 items processed — global budget exhaustion must not block
+    expect(parsed.results).toHaveLength(5);
+    expect(parsed.results.every((r: any) => r.event === "ADD")).toBe(true);
+    expect(parsed.results.map((r: any) => r.id)).toEqual([
+      "id-1", "id-2", "id-3", "id-4", "id-5",
+    ]);
 
     jest.useRealTimers();
   });

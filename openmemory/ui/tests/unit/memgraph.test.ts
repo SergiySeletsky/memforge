@@ -11,11 +11,18 @@
 export {};
 
 // --- Mock neo4j-driver ---
+const mockTx = {
+  run: jest.fn(),
+  commit: jest.fn().mockResolvedValue(undefined),
+  rollback: jest.fn().mockResolvedValue(undefined),
+};
+
 const mockSession = {
   run: jest.fn(),
   close: jest.fn().mockResolvedValue(undefined),
   readTransaction: jest.fn(),
   writeTransaction: jest.fn(),
+  beginTransaction: jest.fn().mockReturnValue(mockTx),
 };
 
 const mockDriver = {
@@ -451,5 +458,62 @@ describe("SPEC 00: Memgraph layer contract", () => {
 
     // Both calls should return the same driver instance (stored on globalThis)
     expect(d1).toBe(d2);
+  });
+
+  // ---- runTransaction (DB-01) ----
+  test("MG_TX_01: runTransaction() executes all steps in order and calls commit", async () => {
+    mockTx.run
+      .mockResolvedValueOnce({ records: [makeRecord({ a: "val-a" })], summary: {} })
+      .mockResolvedValueOnce({ records: [makeRecord({ b: "val-b" })], summary: {} });
+
+    const { runTransaction } = require("@/lib/db/memgraph");
+    const results = await runTransaction([
+      { cypher: "CREATE (a:Foo) RETURN 'val-a' AS a", params: {} },
+      { cypher: "CREATE (b:Bar) RETURN 'val-b' AS b", params: {} },
+    ]);
+
+    // Both steps return deserialized rows
+    expect(results).toHaveLength(2);
+    expect(results[0]).toEqual([{ a: "val-a" }]);
+    expect(results[1]).toEqual([{ b: "val-b" }]);
+
+    // All Cypher ran through the tx
+    expect(mockTx.run).toHaveBeenCalledTimes(2);
+    // Transaction committed
+    expect(mockTx.commit).toHaveBeenCalledTimes(1);
+    // Rollback NOT called on success
+    expect(mockTx.rollback).not.toHaveBeenCalled();
+    // Session closed
+    expect(mockSession.close).toHaveBeenCalled();
+  });
+
+  test("MG_TX_02: runTransaction() rolls back when a step throws", async () => {
+    mockTx.run
+      .mockResolvedValueOnce({ records: [], summary: {} })
+      .mockRejectedValueOnce(new Error("constraint violation"));
+
+    const { runTransaction } = require("@/lib/db/memgraph");
+    await expect(
+      runTransaction([
+        { cypher: "MERGE (u:User {id: $id})", params: { id: "x" } },
+        { cypher: "MERGE (u:User {id: $id})", params: { id: "x" } }, // duplicate
+      ])
+    ).rejects.toThrow("constraint violation");
+
+    expect(mockTx.rollback).toHaveBeenCalledTimes(1);
+    expect(mockTx.commit).not.toHaveBeenCalled();
+    expect(mockSession.close).toHaveBeenCalled();
+  });
+
+  test("MG_TX_03: runTransaction() closes session even when commit throws", async () => {
+    mockTx.run.mockResolvedValueOnce({ records: [], summary: {} });
+    mockTx.commit.mockRejectedValueOnce(new Error("commit failed"));
+
+    const { runTransaction } = require("@/lib/db/memgraph");
+    await expect(
+      runTransaction([{ cypher: "CREATE (n)", params: {} }])
+    ).rejects.toThrow("commit failed");
+
+    expect(mockSession.close).toHaveBeenCalled();
   });
 });

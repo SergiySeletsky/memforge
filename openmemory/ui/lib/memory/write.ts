@@ -29,6 +29,8 @@ export interface AddMemoryOptions {
   userId: string;
   appName?: string;
   metadata?: Record<string, unknown>;
+  /** Explicit tags for scoped retrieval via search_memory(tag: "..."). */
+  tags?: string[];
 }
 
 export interface MemoryNode {
@@ -61,7 +63,7 @@ export async function addMemory(
   text: string,
   opts: AddMemoryOptions
 ): Promise<string> {
-  const { userId, appName, metadata } = opts;
+  const { userId, appName, metadata, tags } = opts;
   const id = randomUUID();
   const now = new Date().toISOString();
 
@@ -95,6 +97,7 @@ export async function addMemory(
        state: 'active',
        embedding: $embedding,
        metadata: $metadata,
+       tags: $tags,
        validAt: $now,
        createdAt: $now,
        updatedAt: $now
@@ -111,6 +114,7 @@ export async function addMemory(
       content: text,
       embedding,
       metadata: metadata ? JSON.stringify(metadata) : "{}",
+      tags: tags ?? [],
       now,
       ...(appName ? { appName, appId: randomUUID() } : {}),
     }

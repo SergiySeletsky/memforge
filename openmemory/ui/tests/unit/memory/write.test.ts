@@ -133,6 +133,18 @@ describe("addMemory", () => {
     const params = mockRunWrite.mock.calls[1][1] as Record<string, unknown>;
     expect(params.metadata).toBe("{}");
   });
+
+  test("WR_12: passes tags array to the Memory CREATE params", async () => {
+    await addMemory("test", { userId: "u1", tags: ["audit-session-17", "prod"] });
+    const params = mockRunWrite.mock.calls[1][1] as Record<string, unknown>;
+    expect(params.tags).toEqual(["audit-session-17", "prod"]);
+  });
+
+  test("WR_13: defaults tags to empty array when not provided", async () => {
+    await addMemory("test", { userId: "u1" });
+    const params = mockRunWrite.mock.calls[1][1] as Record<string, unknown>;
+    expect(params.tags).toEqual([]);
+  });
 });
 
 // ==========================================================================
