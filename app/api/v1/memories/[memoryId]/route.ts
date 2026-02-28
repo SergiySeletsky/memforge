@@ -58,7 +58,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   const body = await request.json();
   const text = body.memory_content || body.text;
   const user_id = body.user_id;
-  const app_name = body.app_name || body.app || "openmemory";
+  const app_name = body.app_name || body.app || "memforge";
   if (!text || !user_id) {
     return NextResponse.json({ detail: "text and user_id are required" }, { status: 400 });
   }

@@ -1,4 +1,4 @@
-## docker-compose.yml — Consolidated OpenMemory (merged UI + API)
+﻿## docker-compose.yml â€” Consolidated MemForge (merged UI + API)
 ##
 ## The Next.js app serves both the UI and the API.
 ## Storage: Memgraph MAGE replaces both SQLite and Qdrant (Spec 00).
@@ -16,11 +16,11 @@ services:
     # --experimental-enabled=text-search enables BM25 full-text search (Spec 02, v3.3)
     command: ["--storage-properties-on-edges=true", "--experimental-enabled=text-search"]
 
-  openmemory:
+  memforge:
     build:
       context: .
       dockerfile: Dockerfile
-    image: mem0/openmemory:latest
+    image: memforge/memforge:latest
     ports:
       - "3000:3000"
     environment:
@@ -32,8 +32,8 @@ services:
     depends_on:
       - memgraph
     volumes:
-      - openmemory_data:/app/data
+      - memforge_data:/app/data
 
 volumes:
   memgraph_data:
-  openmemory_data:
+  memforge_data:

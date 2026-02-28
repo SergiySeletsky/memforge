@@ -1,15 +1,15 @@
-export {};
+﻿export {};
 
 /**
- * Unit tests for lib/mem0/semaphore.ts — Spec 06
+ * Unit tests for lib/memforge/semaphore.ts â€” Spec 06
  *
- * SEM_01 — constructor sets correct initial permits
- * SEM_02 — acquire/release serializes concurrent work
- * SEM_03 — run() executes fn and releases permit automatically
- * SEM_04 — run() releases permit even when fn throws
+ * SEM_01 â€” constructor sets correct initial permits
+ * SEM_02 â€” acquire/release serializes concurrent work
+ * SEM_03 â€” run() executes fn and releases permit automatically
+ * SEM_04 â€” run() releases permit even when fn throws
  */
 
-import { Semaphore } from "@/lib/mem0/semaphore";
+import { Semaphore } from "@/lib/memforge/semaphore";
 
 describe("Semaphore", () => {
   test("SEM_01: constructor(n) allows n concurrent acquisitions without blocking", async () => {
@@ -58,7 +58,7 @@ describe("Semaphore", () => {
       })
     ).rejects.toThrow("boom");
 
-    // Permit should be released — next run should succeed immediately
+    // Permit should be released â€” next run should succeed immediately
     const result = await sem.run(async () => "ok");
     expect(result).toBe("ok");
   });

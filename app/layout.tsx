@@ -1,4 +1,4 @@
-import type React from "react";
+﻿import type React from "react";
 import "@/app/globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Navbar } from "@/components/Navbar";
@@ -10,8 +10,8 @@ import { Providers } from "./providers";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "OpenMemory - Developer Dashboard",
-  description: "Manage your OpenMemory integration and stored memories",
+  title: "MemForge - Developer Dashboard",
+  description: "Manage your MemForge integration and stored memories",
   generator: "v0.dev",
 };
 

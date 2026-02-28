@@ -1,5 +1,5 @@
-/**
- * P8 — app/api/v1/memories/[memoryId]/route.ts unit tests
+﻿/**
+ * P8 â€” app/api/v1/memories/[memoryId]/route.ts unit tests
  *
  * Covers: GET (400/404/200), PUT (400/404/200)
  */
@@ -153,7 +153,7 @@ describe("PUT /api/v1/memories/:memoryId", () => {
   });
 
   test("RT_12: returns 404 when ownership check fails", async () => {
-    mockRunRead.mockResolvedValueOnce([]); // ownership check → empty
+    mockRunRead.mockResolvedValueOnce([]); // ownership check â†’ empty
     const req = makeRequest(
       "PUT",
       "http://localhost:3000/api/v1/memories/mem-1",
@@ -174,7 +174,7 @@ describe("PUT /api/v1/memories/:memoryId", () => {
       createdAt: "2026-01-02T00:00:00.000Z",
       validAt: "2026-01-02T00:00:00.000Z",
       metadata: "{}",
-      appName: "openmemory",
+      appName: "memforge",
       categories: [],
     }]);
     mockSupersede.mockResolvedValue("new-id");

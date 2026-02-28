@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import { BiEdit } from "react-icons/bi";
 import Image from "next/image";
 
@@ -16,10 +16,10 @@ export const constants = {
     icon: <Icon source="/images/claude.webp" />,
     iconImage: "/images/claude.webp",
   },
-  openmemory: {
-    name: "OpenMemory",
-    icon: <Icon source="/images/open-memory.svg" />,
-    iconImage: "/images/open-memory.svg",
+  memforge: {
+    name: "MemForge",
+    icon: <Icon source="/images/memforge.svg" />,
+    iconImage: "/images/memforge.svg",
   },
   cursor: {
     name: "Cursor",

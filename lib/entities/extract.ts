@@ -1,5 +1,5 @@
-/**
- * lib/entities/extract.ts — LLM-based entity extraction (Spec 04)
+﻿/**
+ * lib/entities/extract.ts â€” LLM-based entity extraction (Spec 04)
  *
  * Given a memory string, returns a list of named entities with name, type, description.
  * Fails open: any error returns [].
@@ -34,7 +34,7 @@ function normalizeExtractedEntities(input: unknown): ExtractedEntity[] {
 export async function extractEntitiesFromMemory(
   content: string
 ): Promise<ExtractedEntity[]> {
-  const model = process.env.LLM_AZURE_DEPLOYMENT ?? process.env.OPENMEMORY_CATEGORIZATION_MODEL ?? "gpt-4o-mini";
+  const model = process.env.LLM_AZURE_DEPLOYMENT ?? process.env.MEMFORGE_CATEGORIZATION_MODEL ?? "gpt-4o-mini";
 
   try {
     const client = getLLMClient();

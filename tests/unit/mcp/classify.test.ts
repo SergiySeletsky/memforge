@@ -1,35 +1,35 @@
-export {};
+﻿export {};
 /**
- * Unit tests — lib/mcp/classify.ts
+ * Unit tests â€” lib/mcp/classify.ts
  *
  * Tests the intent classifier for the 2-tool MCP architecture.
  *
- * CLASSIFY_FAST_01:  plain fact — fast-path returns STORE without calling LLM
- * CLASSIFY_FAST_02:  declarative preference — fast-path STORE
- * CLASSIFY_FAST_03:  past-tense observation — fast-path STORE
- * CLASSIFY_FAST_04:  forward reference to forgetting — fast-path triggered
+ * CLASSIFY_FAST_01:  plain fact â€” fast-path returns STORE without calling LLM
+ * CLASSIFY_FAST_02:  declarative preference â€” fast-path STORE
+ * CLASSIFY_FAST_03:  past-tense observation â€” fast-path STORE
+ * CLASSIFY_FAST_04:  forward reference to forgetting â€” fast-path triggered
  *
- * CLASSIFY_LLM_01:   LLM returns INVALIDATE → classified as INVALIDATE with target
- * CLASSIFY_LLM_02:   LLM returns DELETE_ENTITY → classified as DELETE_ENTITY with entityName
- * CLASSIFY_LLM_03:   LLM returns STORE → classified as STORE
- * CLASSIFY_LLM_04:   LLM returns INVALIDATE with missing target → falls back to STORE
- * CLASSIFY_LLM_05:   LLM returns DELETE_ENTITY with missing entityName → falls back to STORE
- * CLASSIFY_LLM_06:   LLM returns unexpected intent string → falls back to STORE
- * CLASSIFY_LLM_07:   LLM returns malformed JSON → fails open to STORE
- * CLASSIFY_LLM_08:   LLM call throws → fails open to STORE
- * CLASSIFY_LLM_09:   LLM returns empty string → fails open to STORE
+ * CLASSIFY_LLM_01:   LLM returns INVALIDATE â†’ classified as INVALIDATE with target
+ * CLASSIFY_LLM_02:   LLM returns DELETE_ENTITY â†’ classified as DELETE_ENTITY with entityName
+ * CLASSIFY_LLM_03:   LLM returns STORE â†’ classified as STORE
+ * CLASSIFY_LLM_04:   LLM returns INVALIDATE with missing target â†’ falls back to STORE
+ * CLASSIFY_LLM_05:   LLM returns DELETE_ENTITY with missing entityName â†’ falls back to STORE
+ * CLASSIFY_LLM_06:   LLM returns unexpected intent string â†’ falls back to STORE
+ * CLASSIFY_LLM_07:   LLM returns malformed JSON â†’ fails open to STORE
+ * CLASSIFY_LLM_08:   LLM call throws â†’ fails open to STORE
+ * CLASSIFY_LLM_09:   LLM returns empty string â†’ fails open to STORE
  *
- * CLASSIFY_REGEX_01: "forget … about" pattern → triggers LLM path
- * CLASSIFY_REGEX_02: "stop tracking" → triggers LLM path
- * CLASSIFY_REGEX_03: "don't remember" → triggers LLM path
- * CLASSIFY_REGEX_04: "mark as outdated" → triggers LLM path
- * CLASSIFY_REGEX_05: "invalidate" alone → triggers LLM path
- * CLASSIFY_REGEX_06: "remove entity" → triggers LLM path
+ * CLASSIFY_REGEX_01: "forget â€¦ about" pattern â†’ triggers LLM path
+ * CLASSIFY_REGEX_02: "stop tracking" â†’ triggers LLM path
+ * CLASSIFY_REGEX_03: "don't remember" â†’ triggers LLM path
+ * CLASSIFY_REGEX_04: "mark as outdated" â†’ triggers LLM path
+ * CLASSIFY_REGEX_05: "invalidate" alone â†’ triggers LLM path
+ * CLASSIFY_REGEX_06: "remove entity" â†’ triggers LLM path
  * CLASSIFY_REGEX_07: case-insensitive matching
  *
  * CLASSIFY_MISC_01:  temperature=0 and max_tokens=100 passed to LLM (deterministic)
  * CLASSIFY_MISC_02:  env LLM_AZURE_DEPLOYMENT used when set
- * CLASSIFY_MISC_03:  OPENMEMORY_CATEGORIZATION_MODEL used as second fallback
+ * CLASSIFY_MISC_03:  MEMFORGE_CATEGORIZATION_MODEL used as second fallback
  */
 
 const mockCreate = jest.fn();
@@ -45,13 +45,13 @@ import { classifyIntent, mightBeCommand } from "@/lib/mcp/classify";
 beforeEach(() => {
   jest.clearAllMocks();
   delete process.env.LLM_AZURE_DEPLOYMENT;
-  delete process.env.OPENMEMORY_CATEGORIZATION_MODEL;
+  delete process.env.MEMFORGE_CATEGORIZATION_MODEL;
 });
 
 // ---------------------------------------------------------------------------
-// mightBeCommand — regex pre-filter
+// mightBeCommand â€” regex pre-filter
 // ---------------------------------------------------------------------------
-describe("mightBeCommand — regex pre-filter", () => {
+describe("mightBeCommand â€” regex pre-filter", () => {
   it("CLASSIFY_REGEX_01: 'forget everything about Alice' triggers command path", () => {
     expect(mightBeCommand("Please forget everything about Alice")).toBe(true);
   });
@@ -76,7 +76,7 @@ describe("mightBeCommand — regex pre-filter", () => {
     expect(mightBeCommand("remove entity Carol from the graph")).toBe(true);
   });
 
-  it("CLASSIFY_REGEX_07: case-insensitive — FORGET triggers command path", () => {
+  it("CLASSIFY_REGEX_07: case-insensitive â€” FORGET triggers command path", () => {
     expect(mightBeCommand("FORGET ABOUT my old address")).toBe(true);
   });
 
@@ -94,9 +94,9 @@ describe("mightBeCommand — regex pre-filter", () => {
 });
 
 // ---------------------------------------------------------------------------
-// classifyIntent — fast path (no LLM call)
+// classifyIntent â€” fast path (no LLM call)
 // ---------------------------------------------------------------------------
-describe("classifyIntent — fast path (STORE without LLM)", () => {
+describe("classifyIntent â€” fast path (STORE without LLM)", () => {
   it("CLASSIFY_FAST_01: plain fact returns STORE without calling LLM", async () => {
     const result = await classifyIntent("Alice is a senior engineer at Acme");
     expect(result).toEqual({ type: "STORE" });
@@ -117,10 +117,10 @@ describe("classifyIntent — fast path (STORE without LLM)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// classifyIntent — LLM path (command-like text)
+// classifyIntent â€” LLM path (command-like text)
 // ---------------------------------------------------------------------------
-describe("classifyIntent — LLM path", () => {
-  it("CLASSIFY_LLM_01: LLM returns INVALIDATE with target → INVALIDATE intent", async () => {
+describe("classifyIntent â€” LLM path", () => {
+  it("CLASSIFY_LLM_01: LLM returns INVALIDATE with target â†’ INVALIDATE intent", async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: '{"intent":"INVALIDATE","target":"Alice phone number"}' } }],
     });
@@ -130,7 +130,7 @@ describe("classifyIntent — LLM path", () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("CLASSIFY_LLM_02: LLM returns DELETE_ENTITY with entityName → DELETE_ENTITY intent", async () => {
+  it("CLASSIFY_LLM_02: LLM returns DELETE_ENTITY with entityName â†’ DELETE_ENTITY intent", async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: '{"intent":"DELETE_ENTITY","entityName":"Bob"}' } }],
     });
@@ -140,7 +140,7 @@ describe("classifyIntent — LLM path", () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("CLASSIFY_LLM_03: LLM returns STORE → STORE intent", async () => {
+  it("CLASSIFY_LLM_03: LLM returns STORE â†’ STORE intent", async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: '{"intent":"STORE"}' } }],
     });
@@ -149,7 +149,7 @@ describe("classifyIntent — LLM path", () => {
     expect(result).toEqual({ type: "STORE" });
   });
 
-  it("CLASSIFY_LLM_04: LLM returns INVALIDATE without target → falls back to STORE", async () => {
+  it("CLASSIFY_LLM_04: LLM returns INVALIDATE without target â†’ falls back to STORE", async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: '{"intent":"INVALIDATE"}' } }],
     });
@@ -158,7 +158,7 @@ describe("classifyIntent — LLM path", () => {
     expect(result).toEqual({ type: "STORE" });
   });
 
-  it("CLASSIFY_LLM_05: LLM returns DELETE_ENTITY without entityName → falls back to STORE", async () => {
+  it("CLASSIFY_LLM_05: LLM returns DELETE_ENTITY without entityName â†’ falls back to STORE", async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: '{"intent":"DELETE_ENTITY"}' } }],
     });
@@ -167,7 +167,7 @@ describe("classifyIntent — LLM path", () => {
     expect(result).toEqual({ type: "STORE" });
   });
 
-  it("CLASSIFY_LLM_06: LLM returns unknown intent string → falls back to STORE", async () => {
+  it("CLASSIFY_LLM_06: LLM returns unknown intent string â†’ falls back to STORE", async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: '{"intent":"UPDATE","content":"something"}' } }],
     });
@@ -176,7 +176,7 @@ describe("classifyIntent — LLM path", () => {
     expect(result).toEqual({ type: "STORE" });
   });
 
-  it("CLASSIFY_LLM_07: LLM returns malformed JSON → fails open to STORE", async () => {
+  it("CLASSIFY_LLM_07: LLM returns malformed JSON â†’ fails open to STORE", async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: "not json at all" } }],
     });
@@ -185,14 +185,14 @@ describe("classifyIntent — LLM path", () => {
     expect(result).toEqual({ type: "STORE" });
   });
 
-  it("CLASSIFY_LLM_08: LLM call throws → fails open to STORE", async () => {
+  it("CLASSIFY_LLM_08: LLM call throws â†’ fails open to STORE", async () => {
     mockCreate.mockRejectedValueOnce(new Error("network timeout"));
 
     const result = await classifyIntent("stop remembering my address");
     expect(result).toEqual({ type: "STORE" });
   });
 
-  it("CLASSIFY_LLM_09: LLM returns empty string → fails open to STORE", async () => {
+  it("CLASSIFY_LLM_09: LLM returns empty string â†’ fails open to STORE", async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: "" } }],
     });
@@ -201,7 +201,7 @@ describe("classifyIntent — LLM path", () => {
     expect(result).toEqual({ type: "STORE" });
   });
 
-  it("CLASSIFY_LLM_10: LLM returns null content → fails open to STORE", async () => {
+  it("CLASSIFY_LLM_10: LLM returns null content â†’ fails open to STORE", async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: null } }],
     });
@@ -235,8 +235,8 @@ describe("classifyIntent — LLM path", () => {
     );
   });
 
-  it("CLASSIFY_MISC_03: uses OPENMEMORY_CATEGORIZATION_MODEL as second fallback", async () => {
-    process.env.OPENMEMORY_CATEGORIZATION_MODEL = "gpt-3.5-turbo";
+  it("CLASSIFY_MISC_03: uses MEMFORGE_CATEGORIZATION_MODEL as second fallback", async () => {
+    process.env.MEMFORGE_CATEGORIZATION_MODEL = "gpt-3.5-turbo";
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: '{"intent":"STORE"}' } }],
     });
@@ -265,7 +265,7 @@ describe("classifyIntent — LLM path", () => {
       choices: [{ message: { content: '{"intent":"INVALIDATE","target":42}' } }],
     });
 
-    // target must be a string — numeric target is rejected, falls back to STORE
+    // target must be a string â€” numeric target is rejected, falls back to STORE
     const result = await classifyIntent("forget that number");
     expect(result).toEqual({ type: "STORE" });
   });

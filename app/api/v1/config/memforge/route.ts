@@ -1,17 +1,16 @@
-/**
- * GET/PUT /api/v1/config/mem0/vector_store
- * Spec 00: Memgraph port - vector store is now Memgraph, return its config.
+﻿/**
+ * GET/PUT /api/v1/config/memforge
+ * Spec 00: Memgraph port
  */
 import { NextRequest, NextResponse } from "next/server";
 import { runRead, runWrite } from "@/lib/db/memgraph";
 
-const CONFIG_KEY = "mem0_vector_store";
-const DEFAULT = { provider: "memgraph", config: { url: process.env.MEMGRAPH_URL ?? "bolt://localhost:7687" } };
+const CONFIG_KEY = "memforge_config";
 
 export async function GET() {
   const rows = await runRead<{ value: string }>(`MATCH (c:Config {key: $key}) RETURN c.value AS value`, { key: CONFIG_KEY });
-  if (!rows.length) return NextResponse.json(DEFAULT);
-  try { return NextResponse.json(JSON.parse(rows[0].value)); } catch { return NextResponse.json(DEFAULT); }
+  if (!rows.length) return NextResponse.json({});
+  try { return NextResponse.json(JSON.parse(rows[0].value)); } catch { return NextResponse.json({}); }
 }
 
 export async function PUT(request: NextRequest) {

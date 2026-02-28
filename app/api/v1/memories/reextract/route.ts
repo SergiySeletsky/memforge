@@ -1,4 +1,4 @@
-/**
+﻿/**
  * POST /api/v1/memories/reextract?user_id=X
  *
  * Trigger (or re-trigger) async entity extraction for all Memory nodes
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     queued++;
   }
 
-  if (process.env.NODE_ENV === "test" || process.env.OPENMEMORY_SYNC_ENTITY_EXTRACTION === "1") {
+  if (process.env.NODE_ENV === "test" || process.env.MEMFORGE_SYNC_ENTITY_EXTRACTION === "1") {
     await Promise.allSettled(jobs);
   }
 

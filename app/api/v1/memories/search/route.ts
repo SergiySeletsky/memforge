@@ -1,4 +1,4 @@
-/**
+﻿/**
  * POST /api/v1/memories/search -- Hybrid search endpoint
  *
  * Spec 02: Combined full-text + vector search with RRF merging.
@@ -12,7 +12,7 @@ import { z } from "zod";
 const SearchRequestSchema = z.object({
   query: z.string().min(1),
   user_id: z.string(),
-  app_name: z.string().optional().default("openmemory"),
+  app_name: z.string().optional().default("memforge"),
   top_k: z.number().int().min(1).max(50).optional().default(10),
   mode: z.enum(["hybrid", "text", "vector"]).optional().default("hybrid"),
 });
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       mode: body.mode,
     });
 
-    // Log ACCESSED relationships for each result — batch write to avoid concurrent MERGE races
+    // Log ACCESSED relationships for each result â€” batch write to avoid concurrent MERGE races
     if (results.length > 0) {
       const now = new Date().toISOString();
       const appName = body.app_name;

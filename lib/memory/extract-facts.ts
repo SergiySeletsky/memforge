@@ -1,5 +1,5 @@
-/**
- * lib/memory/extract-facts.ts — Conversation fact extraction (migrated from mem0-ts/oss)
+﻿/**
+ * lib/memory/extract-facts.ts â€” Conversation fact extraction (migrated from memforge-ts/oss)
  *
  * Extracts discrete facts from multi-turn conversations using LLM.
  * Two modes:
@@ -218,7 +218,7 @@ export async function extractFactsFromConversation(
 ): Promise<string[]> {
   const model =
     process.env.LLM_AZURE_DEPLOYMENT ??
-    process.env.OPENMEMORY_CATEGORIZATION_MODEL ??
+    process.env.MEMFORGE_CATEGORIZATION_MODEL ??
     "gpt-4o-mini";
 
   try {

@@ -1,6 +1,6 @@
-/**
+﻿/**
  * Zod schemas for API request/response validation.
- * Port of openmemory/api/app/schemas.py + router request models.
+ * Port of MemForge/api/app/schemas.py + router request models.
  */
 import { z } from "zod";
 
@@ -28,7 +28,7 @@ export const CreateMemoryRequestSchema = z.object({
   text: z.string(),
   metadata: z.record(z.string(), z.unknown()).optional().default({}),
   infer: z.boolean().optional().default(true),
-  app: z.string().optional().default("openmemory"),
+  app: z.string().optional().default("memforge"),
 });
 
 export const DeleteMemoriesRequestSchema = z.object({
@@ -106,17 +106,17 @@ export const VectorStoreProviderSchema = z.object({
   config: z.record(z.string(), z.unknown()),
 });
 
-export const OpenMemoryConfigSchema = z.object({});
+export const MemForgeConfigSchema = z.object({});
 
-export const Mem0ConfigSchema = z.object({
+export const MemforgeExtConfigSchema = z.object({
   llm: LLMProviderSchema.nullable().optional(),
   embedder: EmbedderProviderSchema.nullable().optional(),
   vector_store: VectorStoreProviderSchema.nullable().optional(),
 });
 
 export const ConfigSchemaZ = z.object({
-  openmemory: OpenMemoryConfigSchema.nullable().optional(),
-  mem0: Mem0ConfigSchema.nullable().optional(),
+  memforge: MemForgeConfigSchema.nullable().optional(),
+  memforge_ext: MemforgeExtConfigSchema.nullable().optional(),
 });
 
 // --- Backup ---

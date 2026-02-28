@@ -1,16 +1,16 @@
-/**
- * lib/search/rerank.ts — Cross-Encoder Reranking — Spec 08
+﻿/**
+ * lib/search/rerank.ts â€” Cross-Encoder Reranking â€” Spec 08
  *
  * An optional second-pass reranker that scores each candidate against
  * the user's query using an LLM. More accurate than cosine similarity
- * for "direct usefulness" but adds ~1–2s latency.
+ * for "direct usefulness" but adds ~1â€“2s latency.
  *
- * This is opt-in — default hybridSearch behavior is unchanged.
+ * This is opt-in â€” default hybridSearch behavior is unchanged.
  */
 import { getLLMClient } from "@/lib/ai/client";
-import { Semaphore } from "@/lib/mem0/semaphore";
+import { Semaphore } from "@/lib/memforge/semaphore";
 
-// ── Types ──────────────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface RerankCandidate {
   id: string;
@@ -19,29 +19,29 @@ export interface RerankCandidate {
 }
 
 export interface RerankResult extends RerankCandidate {
-  rerankScore: number; // 0–10 LLM score
+  rerankScore: number; // 0â€“10 LLM score
 }
 
-// ── Prompt ─────────────────────────────────────────────────────────────────
+// â”€â”€ Prompt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const RERANK_PROMPT = `You are a relevance scoring assistant.
 Given a user query and a memory statement, score how directly and usefully the memory answers the query.
 
-Score 0–10:
+Score 0â€“10:
 - 10: Directly and completely answers the query
-- 7–9: Highly relevant, addresses the main topic
-- 4–6: Partially relevant, related topic
-- 1–3: Tangentially related
+- 7â€“9: Highly relevant, addresses the main topic
+- 4â€“6: Partially relevant, related topic
+- 1â€“3: Tangentially related
 - 0: Irrelevant
 
-Respond with ONLY a single integer 0–10.`;
+Respond with ONLY a single integer 0â€“10.`;
 
-// ── Implementation ─────────────────────────────────────────────────────────
+// â”€â”€ Implementation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Rerank candidates using LLM cross-encoder scoring.
  * Processes candidates in parallel with a Semaphore to control concurrency.
- * LLM failure for a single candidate is non-fatal — that candidate receives score 0.
+ * LLM failure for a single candidate is non-fatal â€” that candidate receives score 0.
  */
 export async function crossEncoderRerank(
   query: string,
@@ -52,7 +52,7 @@ export async function crossEncoderRerank(
   const client = getLLMClient();
   const model =
     process.env.SEARCH_RERANK_MODEL ??
-    process.env.OPENMEMORY_CATEGORIZATION_MODEL ??
+    process.env.MEMFORGE_CATEGORIZATION_MODEL ??
     "gpt-4o-mini";
 
   const sem = new Semaphore(concurrency);

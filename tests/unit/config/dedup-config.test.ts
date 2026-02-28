@@ -1,6 +1,6 @@
-export {};
+﻿export {};
 /**
- * Unit tests — getDedupConfig() default threshold
+ * Unit tests â€” getDedupConfig() default threshold
  *
  * DEDUP_CFG_01: Default threshold is 0.75 (lowered from 0.85 for paraphrase catch)
  * DEDUP_CFG_02: Config override from Memgraph is respected
@@ -20,7 +20,7 @@ beforeEach(() => jest.clearAllMocks());
 
 describe("getDedupConfig", () => {
   it("DEDUP_CFG_01: default threshold is 0.75 (Eval v4 Finding 4)", async () => {
-    // No dedup config in Memgraph → falls back to defaults
+    // No dedup config in Memgraph â†’ falls back to defaults
     mockRunRead.mockResolvedValueOnce([]);
 
     const config = await getDedupConfig();
@@ -31,7 +31,7 @@ describe("getDedupConfig", () => {
 
   it("DEDUP_CFG_02: config override from Memgraph is respected", async () => {
     mockRunRead.mockResolvedValueOnce([
-      { key: "openmemory", value: JSON.stringify({ dedup: { enabled: true, threshold: 0.90 } }) },
+      { key: "memforge", value: JSON.stringify({ dedup: { enabled: true, threshold: 0.90 } }) },
     ]);
 
     const config = await getDedupConfig();

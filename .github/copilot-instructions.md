@@ -1,8 +1,8 @@
-﻿# OpenMemory — Copilot Instructions
+﻿# MemForge — Copilot Instructions
 
 ## Architecture
 
-OpenMemory is a **single Next.js 15 full-stack monolith**.
+MemForge is a **single Next.js 15 full-stack monolith**.
 There is no separate backend — API routes live alongside UI pages.
 
 ```
@@ -26,7 +26,7 @@ All data is in Memgraph. The graph schema:
 (Memory)-[:HAS_ENTITY]->(Entity)
 (Memory)-[:SUPERSEDES]->(OldMemory)   // bi-temporal, Spec 01
 (App)-[:ACCESSED]->(Memory)           // access log
-(Config {key, value})                 // standalone nodes, key = "openmemory"|"mem0"
+(Config {key, value})                 // standalone nodes, key = "memforge"|"memforge_ext"
 ```
 
 ## Critical Patterns

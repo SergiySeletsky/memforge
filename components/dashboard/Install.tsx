@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -35,19 +35,19 @@ const getColorGradient = (color: string) => {
   return "data-[state=active]:bg-[linear-gradient(to_top,_rgba(126,63,242,0.3),_rgba(126,63,242,0))] data-[state=active]:border-[#7E3FF2]";
 };
 
-const allTabs = [{ key: "mcp", label: "MCP Link", icon: "🔗" }, ...clientTabs];
+const allTabs = [{ key: "mcp", label: "MCP Link", icon: "ðŸ”—" }, ...clientTabs];
 
 export const Install = () => {
   const [copiedTab, setCopiedTab] = useState<string | null>(null);
   const user = process.env.NEXT_PUBLIC_USER_ID || "user";
 
-  // MCP clients need an absolute URL — derive from current origin
+  // MCP clients need an absolute URL â€” derive from current origin
   const URL = typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:3000";
 
   const handleCopy = async (tab: string, isMcp: boolean = false) => {
     const text = isMcp
-      ? `${URL}/mcp/openmemory/sse/${user}`
-      : `npx @openmemory/install local ${URL}/mcp/${tab}/sse/${user} --client ${tab}`;
+      ? `${URL}/mcp/memforge/sse/${user}`
+      : `npx @memforge/install local ${URL}/mcp/${tab}/sse/${user} --client ${tab}`;
 
     try {
       // Try using the Clipboard API first
@@ -76,7 +76,7 @@ export const Install = () => {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-6">Install OpenMemory</h2>
+      <h2 className="text-xl font-semibold mb-6">Install MemForge</h2>
 
       <div className="hidden">
         <div className="data-[state=active]:bg-[linear-gradient(to_top,_rgba(0,122,204,0.3),_rgba(0,122,204,0))] data-[state=active]:border-[#007ACC]"></div>
@@ -124,7 +124,7 @@ export const Install = () => {
               <div className="relative">
                 <pre className="bg-zinc-800 px-4 py-3 rounded-md overflow-x-auto text-sm">
                   <code className="text-gray-300">
-                    {URL}/mcp/openmemory/sse/{user}
+                    {URL}/mcp/memforge/sse/{user}
                   </code>
                 </pre>
                 <div>
@@ -159,7 +159,7 @@ export const Install = () => {
                 <div className="relative">
                   <pre className="bg-zinc-800 px-4 py-3 rounded-md overflow-x-auto text-sm">
                     <code className="text-gray-300">
-                      {`npx @openmemory/install local ${URL}/mcp/${key}/sse/${user} --client ${key}`}
+                      {`npx @memforge/install local ${URL}/mcp/${key}/sse/${user} --client ${key}`}
                     </code>
                   </pre>
                   <div>

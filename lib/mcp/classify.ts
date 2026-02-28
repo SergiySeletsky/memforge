@@ -1,10 +1,10 @@
-/**
- * lib/mcp/classify.ts — Intent classifier for 2-tool MCP architecture
+﻿/**
+ * lib/mcp/classify.ts â€” Intent classifier for 2-tool MCP architecture
  *
  * Classifies incoming add_memories text into one of:
- *   STORE           — a fact to remember (default, enters dedup pipeline)
- *   INVALIDATE      — a request to forget/remove memories
- *   DELETE_ENTITY   — a request to stop tracking a specific entity
+ *   STORE           â€” a fact to remember (default, enters dedup pipeline)
+ *   INVALIDATE      â€” a request to forget/remove memories
+ *   DELETE_ENTITY   â€” a request to stop tracking a specific entity
  *
  * Uses a fast regex pre-filter to skip LLM for obvious STORE items.
  * Falls back to LLM classification only when the text contains command-like patterns.
@@ -48,7 +48,7 @@ const CLASSIFY_PROMPT = `You are an intent classifier for a memory system. Given
 
 - STORE: A fact, preference, decision, observation, or piece of information to remember. This is the overwhelmingly common case.
 - INVALIDATE: A request to forget, remove, or mark as irrelevant one or more existing memories. The user is telling the system to stop remembering something specific.
-- DELETE_ENTITY: A request to stop tracking a specific person, concept, organization, or entity entirely. Not just updating a fact — removing the entity itself.
+- DELETE_ENTITY: A request to stop tracking a specific person, concept, organization, or entity entirely. Not just updating a fact â€” removing the entity itself.
 
 Respond with EXACTLY one JSON object (no markdown, no fences):
   {"intent":"STORE"}
@@ -67,7 +67,7 @@ Respond with EXACTLY one JSON object (no markdown, no fences):
  * Fail-open: any error in LLM call defaults to STORE.
  */
 export async function classifyIntent(text: string): Promise<MemoryIntent> {
-  // Fast path: obvious factual statement — no command verbs detected
+  // Fast path: obvious factual statement â€” no command verbs detected
   if (!mightBeCommand(text)) {
     return { type: "STORE" };
   }
@@ -77,7 +77,7 @@ export async function classifyIntent(text: string): Promise<MemoryIntent> {
     const client = getLLMClient();
     const model =
       process.env.LLM_AZURE_DEPLOYMENT ??
-      process.env.OPENMEMORY_CATEGORIZATION_MODEL ??
+      process.env.MEMFORGE_CATEGORIZATION_MODEL ??
       "gpt-4o-mini";
 
     const response = await client.chat.completions.create({

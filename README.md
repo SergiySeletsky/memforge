@@ -1,19 +1,19 @@
-# OpenMemory
+﻿# MemForge
 
-A self-hosted, private memory layer for LLMs — built as a **single Next.js 15 full-stack monolith** backed by **Memgraph** (graph + vector + full-text in one engine).
+A self-hosted, private memory layer for LLMs â€” built as a **single Next.js 15 full-stack monolith** backed by **Memgraph** (graph + vector + full-text in one engine).
 
 No Python. No separate backend. API routes live alongside the UI.
 
 ## Architecture
 
 ```
-  app/api/v1/          ← Next.js App Router API routes
-  app/api/mcp/         ← MCP SSE transport (Model Context Protocol)
-  lib/db/memgraph.ts   ← Database layer (Memgraph via Bolt)
-  lib/memory/write.ts  ← Write pipeline: embed → dedup → write → categorize → entity extract
-  lib/search/hybrid.ts ← BM25 + vector + Reciprocal Rank Fusion
-  lib/ai/client.ts     ← LLM client (OpenAI or Azure)
-  lib/embeddings/      ← Embedding providers (intelli-embed-v3 local ONNX default)
+  app/api/v1/          â† Next.js App Router API routes
+  app/api/mcp/         â† MCP SSE transport (Model Context Protocol)
+  lib/db/memgraph.ts   â† Database layer (Memgraph via Bolt)
+  lib/memory/write.ts  â† Write pipeline: embed â†’ dedup â†’ write â†’ categorize â†’ entity extract
+  lib/search/hybrid.ts â† BM25 + vector + Reciprocal Rank Fusion
+  lib/ai/client.ts     â† LLM client (OpenAI or Azure)
+  lib/embeddings/      â† Embedding providers (intelli-embed-v3 local ONNX default)
 ```
 
 **Key capabilities:** bi-temporal versioning, hybrid search (BM25 + vector RRF), deduplication, entity extraction, community detection, cross-encoder reranking, namespace isolation.
@@ -23,7 +23,7 @@ No Python. No separate backend. API routes live alongside the UI.
 ### Prerequisites
 
 - **Node.js 20+** and **pnpm**
-- **Memgraph 3.3+** — run standalone or via included Docker Compose
+- **Memgraph 3.3+** â€” run standalone or via included Docker Compose
 
 ### 1. Start Memgraph
 
@@ -35,7 +35,7 @@ docker compose -f docker-compose.memgraph.yml up -d
 
 ```bash
 cp .env.example .env
-# Edit .env — set your LLM API key (OpenAI or Azure) and Memgraph connection
+# Edit .env â€” set your LLM API key (OpenAI or Azure) and Memgraph connection
 ```
 
 ### 3. Install & run

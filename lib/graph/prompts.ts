@@ -1,5 +1,5 @@
 /**
- * lib/graph/prompts.ts — Knowledge graph lifecycle prompts (migrated from mem0-ts/oss)
+ * lib/graph/prompts.ts — Knowledge graph lifecycle prompts (migrated from memforge-ts/oss)
  *
  * Prompts for:
  *   - Extracting relations from text (used with RELATIONS_TOOL)

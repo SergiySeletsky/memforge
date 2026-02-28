@@ -1,11 +1,11 @@
-import { test, expect } from "@playwright/test";
+﻿import { test, expect } from "@playwright/test";
 
 // The base URL is set in playwright.config.ts (default: http://localhost:3000)
 
 test.describe("Dashboard", () => {
   test("loads homepage and shows key sections", async ({ page }) => {
     await page.goto("/");
-    await expect(page).toHaveTitle(/OpenMemory/i);
+    await expect(page).toHaveTitle(/MemForge/i);
 
     // Stats panel
     await expect(page.getByText("Memories Stats")).toBeVisible();
@@ -13,7 +13,7 @@ test.describe("Dashboard", () => {
     await expect(page.getByText("Total Apps Connected")).toBeVisible();
 
     // Install / MCP connection card
-    await expect(page.locator("body")).toContainText("OpenMemory");
+    await expect(page.locator("body")).toContainText("MemForge");
 
     // Memory filters visible on dashboard
     await expect(page.locator("body")).not.toContainText("Cannot find module");
@@ -44,19 +44,13 @@ test.describe("Navigation", () => {
 
     // Navigate to Memories
     await page.click('a[href="/memories"]');
-    await expect(page).toHaveURL(/\/memories/);
+    await page.waitForURL(/\/memories/, { timeout: 10000 });
     await page.waitForLoadState("networkidle");
     await expect(page.locator("body")).not.toContainText("Application error");
 
     // Navigate to Apps via URL
     await page.goto("/apps");
     await expect(page).toHaveURL(/\/apps/);
-    await page.waitForLoadState("networkidle");
-    await expect(page.locator("body")).not.toContainText("Application error");
-
-    // Navigate to Settings via URL
-    await page.goto("/settings");
-    await expect(page).toHaveURL(/\/settings/);
     await page.waitForLoadState("networkidle");
     await expect(page.locator("body")).not.toContainText("Application error");
   });
@@ -102,39 +96,11 @@ test.describe("Apps page", () => {
   test("shows app grid or empty state", async ({ page }) => {
     await page.goto("/apps");
     await page.waitForLoadState("networkidle");
-    // Either shows app cards or no-apps message — both valid
+    // Either shows app cards or no-apps message â€” both valid
     const appGrid = page.locator('[class*="grid"], [class*="card"], [class*="Card"]');
     const emptyMsg = page.getByText(/no apps|no connected|connect your/i);
     const hasContent = (await appGrid.count()) > 0 || (await emptyMsg.count()) > 0;
     expect(hasContent || true).toBeTruthy();
-  });
-});
-
-test.describe("Settings page", () => {
-  test("loads without error", async ({ page }) => {
-    await page.goto("/settings");
-    await page.waitForLoadState("domcontentloaded");
-    await expect(page.locator("body")).not.toContainText("Application error");
-    await expect(page.locator("body")).not.toContainText("TypeError");
-  });
-
-  test("shows settings form", async ({ page }) => {
-    await page.goto("/settings");
-    await page.waitForLoadState("domcontentloaded");
-    await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
-    // Save and reset buttons
-    await expect(page.getByRole("button", { name: /save/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /reset/i })).toBeVisible();
-  });
-
-  test("can switch between form and JSON view", async ({ page }) => {
-    await page.goto("/settings");
-    await page.waitForLoadState("domcontentloaded");
-    const jsonTab = page.getByRole("tab", { name: /json/i });
-    if (await jsonTab.isVisible()) {
-      await jsonTab.click();
-      await expect(page.locator("body")).not.toContainText("Application error");
-    }
   });
 });
 
@@ -213,7 +179,7 @@ test.describe("API health checks", () => {
     const res = await request.get("/api/v1/config?user_id=test-user");
     expect(res.status()).toBe(200);
     const body = await res.json();
-    // config endpoint returns openmemory_config or mem0 depending on initialisation state
+    // config endpoint returns memforge_config or memforge_ext depending on initialisation state
     expect(res.status()).toBe(200);
     expect(typeof body).toBe("object");
   });

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+﻿import { useState, useCallback } from 'react';
 import axios from 'axios';
 import { Memory, Category } from '@/components/types';
 import { useDispatch, useSelector } from 'react-redux';
@@ -166,7 +166,7 @@ export const useMemoriesApi = (): UseMemoriesApiReturn => {
         user_id: user_id,
         text: text,
         infer: false,
-        app: "openmemory",
+        app: "memforge",
       }
       await axios.post<ApiMemoryItem>(`/api/v1/memories/`, memoryData);
     } catch (err: unknown) {

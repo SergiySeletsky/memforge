@@ -1,20 +1,20 @@
-/**
- * Shared config helpers — reads/writes config from Memgraph Config nodes.
+﻿/**
+ * Shared config helpers â€” reads/writes config from Memgraph Config nodes.
  *
  * Config nodes: (c:Config {key, value}) where value is a JSON string.
- * Top-level keys: "openmemory" and "mem0".
+ * Top-level keys: "memforge" and "memforge_ext".
  */
 import { runRead, runWrite } from "@/lib/db/memgraph";
 
 export function getDefaultConfiguration() {
   return {
-    openmemory: {} as {
+    memforge: {} as {
       dedup?: { enabled?: boolean; threshold?: number; azureThreshold?: number; intelliThreshold?: number };
       context_window?: { enabled?: boolean; size?: number };
       [key: string]: unknown;
     },
 
-    mem0: {
+    memforge_ext: {
       vector_store: null as Record<string, unknown> | null,
     },
   };
@@ -39,8 +39,8 @@ export async function getConfigFromDb(): Promise<AppConfig> {
     }
     const defaults = getDefaultConfiguration();
     return {
-      openmemory: (result.openmemory as AppConfig["openmemory"]) ?? defaults.openmemory,
-      mem0: (result.mem0 as AppConfig["mem0"]) ?? defaults.mem0,
+      memforge: (result.memforge as AppConfig["memforge"]) ?? defaults.memforge,
+      memforge_ext: (result.memforge_ext as AppConfig["memforge_ext"]) ?? defaults.memforge_ext,
     };
   } catch {
     return getDefaultConfiguration();
@@ -76,19 +76,19 @@ export function deepUpdate(source: Record<string, unknown>, overrides: Record<st
 }
 
 // ---------------------------------------------------------------------------
-// Dedup config — Spec 03
+// Dedup config â€” Spec 03
 // ---------------------------------------------------------------------------
 
 export interface DedupConfig {
   enabled: boolean;
-  threshold: number;        // cosine similarity threshold 0–1 (default provider)
+  threshold: number;        // cosine similarity threshold 0â€“1 (default provider)
   azureThreshold: number;   // Azure-specific threshold (lower: supSim=0.613 on text-embedding-3-small)
   intelliThreshold: number; // intelli-embed-v3-specific threshold (supSim=0.580)
 }
 
 /**
  * Read dedup configuration from Memgraph config or return safe defaults.
- * Keyed under openmemory.dedup in the config JSON.
+ * Keyed under memforge.dedup in the config JSON.
  *
  * Default threshold lowered from 0.85 to 0.75 (Eval v4 Finding 4) to catch
  * paraphrased/semantically-equivalent content. LLM verification in Stage 2
@@ -97,7 +97,7 @@ export interface DedupConfig {
 export async function getDedupConfig(): Promise<DedupConfig> {
   try {
     const raw = await getConfigFromDb();
-    const dedupCfg = raw?.openmemory?.dedup ?? {};
+    const dedupCfg = raw?.memforge?.dedup ?? {};
     return {
       enabled: dedupCfg.enabled ?? true,
       threshold: dedupCfg.threshold ?? 0.75,
@@ -110,7 +110,7 @@ export async function getDedupConfig(): Promise<DedupConfig> {
 }
 
 // ---------------------------------------------------------------------------
-// Context window config — Spec 05
+// Context window config â€” Spec 05
 // ---------------------------------------------------------------------------
 
 export interface ContextWindowConfig {
@@ -120,12 +120,12 @@ export interface ContextWindowConfig {
 
 /**
  * Read context window configuration from Memgraph config or return safe defaults.
- * Keyed under openmemory.context_window in the config JSON.
+ * Keyed under memforge.context_window in the config JSON.
  */
 export async function getContextWindowConfig(): Promise<ContextWindowConfig> {
   try {
     const raw = await getConfigFromDb();
-    const ctx = raw?.openmemory?.context_window ?? {};
+    const ctx = raw?.memforge?.context_window ?? {};
     return {
       enabled: ctx.enabled ?? true,
       size: Math.min(50, Math.max(0, ctx.size ?? 10)),

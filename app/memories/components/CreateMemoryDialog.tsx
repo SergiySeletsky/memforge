@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -53,7 +53,7 @@ export function CreateMemoryDialog() {
         <DialogHeader>
           <DialogTitle>Create New Memory</DialogTitle>
           <DialogDescription>
-            Add a new memory to your OpenMemory instance
+            Add a new memory to your MemForge instance
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">

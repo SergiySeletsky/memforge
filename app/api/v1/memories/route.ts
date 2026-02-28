@@ -1,9 +1,9 @@
-/**
- * GET /api/v1/memories — list memories (paginated, filtered)
- * POST /api/v1/memories — create a new memory
- * DELETE /api/v1/memories — bulk delete memories
+﻿/**
+ * GET /api/v1/memories â€” list memories (paginated, filtered)
+ * POST /api/v1/memories â€” create a new memory
+ * DELETE /api/v1/memories â€” bulk delete memories
  *
- * Spec 00: Memgraph port — replaces SQLite/Drizzle + mem0ai SDK
+ * Spec 00: Memgraph port â€” replaces SQLite/Drizzle + mem0ai SDK
  * Spec 01: Bi-temporal query params (include_superseded, as_of)
  * Spec 02: search_query uses hybridSearch() instead of LIKE
  * Spec 03: POST pre-write deduplication hook
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
       );
       if (appRows.length > 0 && appRows[0].isActive === false) {
         return NextResponse.json(
-          { detail: `App ${body.app} is currently paused on OpenMemory. Cannot create new memories.` },
+          { detail: `App ${body.app} is currently paused on MemForge. Cannot create new memories.` },
           { status: 403 }
         );
       }
@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
 
     if (dedup.action === "skip") {
       // Return the existing memory without writing a duplicate
-      // Spec 09: anchor to User — prevents cross-user memory ID probing
+      // Spec 09: anchor to User â€” prevents cross-user memory ID probing
       const existing = await runRead(
         `MATCH (u:User {userId: $userId})-[:HAS_MEMORY]->(m:Memory {id: $id})
          RETURN m.id AS id, m.content AS content, m.state AS state, m.createdAt AS createdAt`,
@@ -212,7 +212,7 @@ export async function POST(request: NextRequest) {
       { userId: body.user_id, id }
     );
 
-    // Spec 04: Async entity extraction — fire-and-forget, never blocks API response
+    // Spec 04: Async entity extraction â€” fire-and-forget, never blocks API response
     processEntityExtraction(id).catch((e) => console.warn("[entity worker]", e));
 
     return NextResponse.json(rows[0] ?? { id });

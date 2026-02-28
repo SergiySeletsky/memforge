@@ -1,5 +1,5 @@
 /**
- * /api/v1/config/mem0/embedder — removed.
+ * /api/v1/config/memforge/embedder — removed.
  * Embedder is configured exclusively via Azure AI Foundry environment variables
  * (EMBEDDING_AZURE_OPENAI_API_KEY, EMBEDDING_AZURE_ENDPOINT, EMBEDDING_AZURE_DEPLOYMENT).
  * This endpoint is no longer writable.

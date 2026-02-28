@@ -1,4 +1,4 @@
-# Contributing to OpenMemory
+﻿# Contributing to MemForge
 
 ## Ways to Contribute
 
@@ -48,7 +48,7 @@ pnpm test:pw                      # Playwright E2E
 
 ## Pull Request Guidelines
 
-- TypeScript strict mode — zero `tsc` errors
+- TypeScript strict mode â€” zero `tsc` errors
 - All existing tests must pass
 - New features should include tests
 - Update documentation as needed

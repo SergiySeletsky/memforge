@@ -1,5 +1,5 @@
 services:
-  mem0_store:
+  memforge_store:
     image: ghcr.io/chroma-core/chroma:latest
     restart: unless-stopped
     environment:
@@ -8,4 +8,4 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - mem0_storage:/data
+      - memforge_storage:/data

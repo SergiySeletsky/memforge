@@ -1,15 +1,15 @@
-/**
- * lib/entities/tools.ts — LLM tool-calling definitions for entity & relation extraction
+﻿/**
+ * lib/entities/tools.ts â€” LLM tool-calling definitions for entity & relation extraction
  *
- * Migrated from mem0-ts/oss graphs/tools.ts — adapted for openmemory architecture.
+ * Migrated from memforge-ts/oss graphs/tools.ts â€” adapted for MemForge architecture.
  *
  * Tool-calling is more reliable than JSON mode for structured extraction.
  * These tool definitions are passed to the LLM via function-calling API.
  *
  * Tools:
- *   EXTRACT_ENTITIES_TOOL  — Extract entities with types from text
- *   RELATIONS_TOOL         — Extract relationships between entities
- *   DELETE_MEMORY_TOOL_GRAPH — Identify relationships to delete
+ *   EXTRACT_ENTITIES_TOOL  â€” Extract entities with types from text
+ *   RELATIONS_TOOL         â€” Extract relationships between entities
+ *   DELETE_MEMORY_TOOL_GRAPH â€” Identify relationships to delete
  */
 import { z } from "zod";
 

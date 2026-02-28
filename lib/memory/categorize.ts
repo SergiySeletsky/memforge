@@ -1,4 +1,4 @@
-/**
+﻿/**
  * lib/memory/categorize.ts
  *
  * LLM-based memory categorization: given a memory text, assign 1-3 category
@@ -46,7 +46,7 @@ export async function categorizeMemory(
     const client = getLLMClient();
     const model =
       process.env.LLM_AZURE_DEPLOYMENT ??
-      process.env.OPENMEMORY_CATEGORIZATION_MODEL ??
+      process.env.MEMFORGE_CATEGORIZATION_MODEL ??
       "gpt-4o-mini";
 
     const response = await client.chat.completions.create({
@@ -77,7 +77,7 @@ export async function categorizeMemory(
 
     if (valid.length === 0) return;
 
-    // Single UNWIND write — avoids N sequential round-trips (was: for-loop await runWrite)
+    // Single UNWIND write â€” avoids N sequential round-trips (was: for-loop await runWrite)
     await runWrite(
       `MATCH (m:Memory {id: $memId})
        UNWIND $names AS name

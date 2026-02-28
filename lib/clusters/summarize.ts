@@ -1,13 +1,13 @@
-/**
- * lib/clusters/summarize.ts — Spec 07
+﻿/**
+ * lib/clusters/summarize.ts â€” Spec 07
  *
  * Given an array of memory content strings from the same cluster,
  * generates a short name and one-sentence summary via LLM.
- * Pure LLM logic — no storage dependencies.
+ * Pure LLM logic â€” no storage dependencies.
  */
 import { getLLMClient, resetLLMClient } from "@/lib/ai/client";
 
-/** @internal Test helper — reset singleton so mocks take effect. */
+/** @internal Test helper â€” reset singleton so mocks take effect. */
 export function _resetOpenAIClient(): void {
   resetLLMClient();
 }
@@ -16,7 +16,7 @@ export async function summarizeCluster(
   memories: string[]
 ): Promise<{ name: string; summary: string }> {
   const model =
-    process.env.LLM_AZURE_DEPLOYMENT ?? process.env.OPENMEMORY_CATEGORIZATION_MODEL ?? "gpt-4o-mini";
+    process.env.LLM_AZURE_DEPLOYMENT ?? process.env.MEMFORGE_CATEGORIZATION_MODEL ?? "gpt-4o-mini";
 
   // Sample up to 20 memories to stay within token limits
   const sample = memories

@@ -1,5 +1,5 @@
-/**
- * MCP Server for OpenMemory -- 2-tool architecture
+﻿/**
+ * MCP Server for MemForge -- 2-tool architecture
  *
  * Two MCP tools provide the complete agentic long-term memory interface:
  *
@@ -87,7 +87,7 @@ const addMemoriesSchema = {
 };
 
 export function createMcpServer(userId: string, clientName: string): McpServer {
-  const server = new McpServer({ name: "mem0-mcp-server", version: "2.0.0" });
+  const server = new McpServer({ name: "memforge-mcp-server", version: "2.0.0" });
 
   // -------- add_memories --------
   server.registerTool(
@@ -198,7 +198,7 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
               id = await addMemory(text, {
                 userId,
                 appName: clientName,
-                metadata: { source_app: "openmemory", mcp_client: clientName },
+                metadata: { source_app: "memforge", mcp_client: clientName },
                 tags: explicitTags,
               });
             }
@@ -255,9 +255,9 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
 
         console.log(`[MCP] add_memories done in ${Date.now() - t0}ms batch=${items.length}`);
 
-        // ── Minimal response ──
+        // â”€â”€ Minimal response â”€â”€
         // Only non-zero counts + ids for stored items + index-correlated errors.
-        // Caller already has the input text — no echo, no per-item objects.
+        // Caller already has the input text â€” no echo, no per-item objects.
         const response: Record<string, unknown> = {};
 
         const addIds = results.filter(r => r.event === "ADD").map(r => r.id);
@@ -335,7 +335,7 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
           const effectiveOffset = offset ?? 0;
           console.log(`[MCP] search_memory browse userId=${userId} limit=${effectiveLimit} offset=${effectiveOffset} category=${category} tag=${tag}`);
 
-          // Build params without undefined values — Memgraph warns on unused params (MCP-01)
+          // Build params without undefined values â€” Memgraph warns on unused params (MCP-01)
           const browseParams: Record<string, unknown> = { userId, offset: effectiveOffset, limit: effectiveLimit };
           if (category) browseParams.category = category;
           if (tag) browseParams.tag = tag;
@@ -386,7 +386,7 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
         const effectiveLimit = limit ?? 10;
         // MCP-FILTER-02 fix: tag post-filter has lowest selectivity (few memories
         // carry a given tag), so use a higher multiplier to compensate.
-        // category/date filters are less aggressive — 5× suffices.
+        // category/date filters are less aggressive â€” 5Ã— suffices.
         const fetchMultiplier = tag ? 10 : (category || created_after) ? 5 : 1;
         const fetchLimit = effectiveLimit * fetchMultiplier;
         console.log(`[MCP] search_memory search userId=${userId} query="${query}" limit=${effectiveLimit} fetchLimit=${fetchLimit}`);
@@ -451,7 +451,7 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
             type: "text",
             text: JSON.stringify({
               // Confidence heuristic (MCP-CONFIDENCE-02):
-              // RRF single-arm floor ≈ 1/(K+1) where K=60 → 0.0164. Scores above
+              // RRF single-arm floor â‰ˆ 1/(K+1) where K=60 â†’ 0.0164. Scores above
               // 0.012 indicate at least one arm ranked the result in the top half.
               // Previous 0.02 threshold caused false-negatives for valid vector-only results.
               ...(filtered.length > 0 ? (() => {

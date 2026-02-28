@@ -1,14 +1,14 @@
-/**
- * lib/graph/memgraph.ts — Memgraph GraphStore implementation
+﻿/**
+ * lib/graph/memgraph.ts â€” Memgraph GraphStore implementation
  *
- * Migrated from mem0-ts/oss graph_stores/memgraph.ts, rewritten to use
- * openmemory's runRead/runWrite pattern instead of raw neo4j sessions.
+ * Migrated from memforge-ts/oss graph_stores/memgraph.ts, rewritten to use
+ * MemForge's runRead/runWrite pattern instead of raw neo4j sessions.
  *
  * Key differences from oss version:
  *   - Uses runRead/runWrite from @/lib/db/memgraph (not raw neo4j-driver)
  *   - User scoping via (User)-[:HAS_ENTITY]->(Entity) graph path
  *     (not flat user_id property filter)
- *   - Uses openmemory's entity_vectors index (initialized by instrumentation.ts)
+ *   - Uses MemForge's entity_vectors index (initialized by instrumentation.ts)
  *   - Entity names normalized via lowercase + underscore replacement
  */
 
@@ -27,23 +27,23 @@ import type {
 /** Vector index name for entity embeddings. */
 const ENTITY_INDEX_NAME = "entity_vectors";
 
-// ─── Helper: normalize entity name ─────────────────────────────────────────
+// â”€â”€â”€ Helper: normalize entity name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function normalizeName(name: string): string {
   return name.toLowerCase().replace(/\s+/g, "_");
 }
 
-// ─── Implementation ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Implementation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export class MemgraphGraphStore implements GraphStore {
   // The entity_vectors index is created by instrumentation.ts initSchema().
   // No additional initialization needed per-instance.
   async initialize(): Promise<void> {
     // entity_vectors index is managed by initSchema() in instrumentation.ts
-    // This is a no-op for the openmemory integration.
+    // This is a no-op for the MemForge integration.
   }
 
-  // ── Node CRUD ──────────────────────────────────────────────────────────
+  // â”€â”€ Node CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async searchNodes(
     queryEmbedding: number[],
@@ -117,7 +117,7 @@ export class MemgraphGraphStore implements GraphStore {
     );
   }
 
-  // ── Edge / Relationship CRUD ──────────────────────────────────────────
+  // â”€â”€ Edge / Relationship CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async searchEdges(
     queryEmbedding: number[],
@@ -288,7 +288,7 @@ export class MemgraphGraphStore implements GraphStore {
     );
   }
 
-  // ── Traversal ──────────────────────────────────────────────────────────
+  // â”€â”€ Traversal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async getNeighborhood(
     nodeId: string,
@@ -303,7 +303,7 @@ export class MemgraphGraphStore implements GraphStore {
         ? `:${options.relationshipTypes.join("|")}`
         : "";
 
-    // Exclude internal openmemory relationship types from traversal
+    // Exclude internal MemForge relationship types from traversal
     const rows = await runRead<{
       neighborNodes: Array<{ id: string; name: string; type?: string; description?: string }>;
       edgeList: Array<{ id: string; srcId: string; srcName: string; relType: string | null; tgtId: string; tgtName: string; properties?: string }>;
@@ -438,7 +438,7 @@ export class MemgraphGraphStore implements GraphStore {
     return { nodes, edges };
   }
 
-  // ── Bulk ──────────────────────────────────────────────────────────────
+  // â”€â”€ Bulk â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async getAll(userId: string, limit: number = 100): Promise<RelationTriple[]> {
     const rows = await runRead<{

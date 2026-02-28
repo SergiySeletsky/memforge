@@ -1,22 +1,22 @@
-/**
- * lib/embeddings/openai.ts — Embedding provider router (Spec 00 / Spec 10)
+﻿/**
+ * lib/embeddings/openai.ts â€” Embedding provider router (Spec 00 / Spec 10)
  *
  * Selects the active embedding backend based on EMBEDDING_PROVIDER env var:
  *
- *   EMBEDDING_PROVIDER=intelli  (default) → serhiiseletskyi/intelli-embed-v3
+ *   EMBEDDING_PROVIDER=intelli  (default) â†’ serhiiseletskyi/intelli-embed-v3
  *     Requires: nothing (model auto-downloaded on first call, ~542 MB INT8 ONNX)
  *     Dims:     1024 (CLS pooling, L2-normalized)
- *     Benchmark: Sep=0.505, beats azure-large on 5/6 OpenMemory metrics
+ *     Benchmark: Sep=0.505, beats azure-large on 5/6 MemForge metrics
  *
- *   EMBEDDING_PROVIDER=azure  → Azure AI Foundry text-embedding-3-small
+ *   EMBEDDING_PROVIDER=azure  â†’ Azure AI Foundry text-embedding-3-small
  *     Requires: EMBEDDING_AZURE_OPENAI_API_KEY + EMBEDDING_AZURE_ENDPOINT
  *     Dims:     1536 (or EMBEDDING_DIMS override)
  *
- *   EMBEDDING_PROVIDER=nomic  → nomic-ai/nomic-embed-text-v1.5 (local CPU, offline)
+ *   EMBEDDING_PROVIDER=nomic  â†’ nomic-ai/nomic-embed-text-v1.5 (local CPU, offline)
  *     Requires: nothing (model auto-downloaded on first call, ~120 MB)
  *     Dims:     768 (or EMBEDDING_DIMS override for Matryoshka sub-dims)
  *
- * ⚠️  IMPORTANT: Changing EMBEDDING_PROVIDER changes the vector dimension.
+ * âš ï¸  IMPORTANT: Changing EMBEDDING_PROVIDER changes the vector dimension.
  *     This requires dropping and recreating Memgraph vector indexes AND
  *     re-embedding all stored memories.  See AGENTS.md for migration steps.
  *

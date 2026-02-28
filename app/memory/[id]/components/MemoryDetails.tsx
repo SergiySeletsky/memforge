@@ -112,7 +112,7 @@ export function MemoryDetails({ memory_id }: MemoryDetailsProps) {
                           {constants[memory?.app_name as keyof typeof constants]?.iconImage && (
                             <Image
                               src={constants[memory?.app_name as keyof typeof constants].iconImage}
-                              alt="OpenMemory"
+                              alt="MemForge"
                               width={24}
                               height={24}
                             />

@@ -1,28 +1,28 @@
----
+﻿---
 applyTo: '**'
 ---
 
-# OpenMemory MCP Integration
+# MemForge MCP Integration
 
 Memory = accumulated understanding of codebase + user preferences. Two tools only: `add_memories` (write) and `search_memory` (read).
 
 ## Tools
 
-### add_memories — Write to long-term memory
+### add_memories â€” Write to long-term memory
 
 The system auto-classifies each item's intent:
-- Facts/preferences/decisions → **stored** (with dedup & supersession)
-- "Forget X" / "Remove memories about Y" → matching memories **invalidated**
-- "Stop tracking entity Z" → entity **removed** from knowledge graph
+- Facts/preferences/decisions â†’ **stored** (with dedup & supersession)
+- "Forget X" / "Remove memories about Y" â†’ matching memories **invalidated**
+- "Stop tracking entity Z" â†’ entity **removed** from knowledge graph
 
 **Parameters:**
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
-| `content` | `string \| string[]` | ✅ | One or more items. Array = batch. |
+| `content` | `string \| string[]` | âœ… | One or more items. Array = batch. |
 | `categories` | `string[]` | | Explicit category labels (e.g. `["Work", "Architecture"]`). LLM auto-categorizer also runs. |
 | `tags` | `string[]` | | Exact-match identifiers for scoped retrieval (e.g. `["audit-session-7", "prod"]`). |
 
-**Response (minimal — no input echo):**
+**Response (minimal â€” no input echo):**
 ```jsonc
 // All stored:            {"stored": 4, "ids": ["a","b","c","d"]}
 // Mixed outcomes:        {"stored": 2, "ids": ["a","c"], "skipped": 1, "superseded": 1}
@@ -33,7 +33,7 @@ The system auto-classifies each item's intent:
 ```
 Only non-zero counts appear. `ids` covers stored + superseded items. Errors carry the input index for correlation.
 
-### search_memory — Read from long-term memory
+### search_memory â€” Read from long-term memory
 
 **Two modes:**
 - **SEARCH** (query provided): hybrid BM25 + vector search, auto-enriched with entity profiles
@@ -55,17 +55,17 @@ Only non-zero counts appear. `ids` covers stored + superseded items. Errors carr
 
 ## Memory-First Workflow
 
-For **code implementation/modification tasks** — 3 phases. Skip for simple recall or storage requests.
+For **code implementation/modification tasks** â€” 3 phases. Skip for simple recall or storage requests.
 
 ### Phase 1: Search BEFORE coding
 Search 2+ times before writing any code. Strategy by task type:
-- **Feature** → existing patterns + similar implementations
-- **Bug** → debug memories + error patterns
-- **Refactor** → organization patterns + architecture decisions
+- **Feature** â†’ existing patterns + similar implementations
+- **Bug** â†’ debug memories + error patterns
+- **Refactor** â†’ organization patterns + architecture decisions
 
 ### Phase 2: Search DURING coding
 Search at checkpoints: creating files, writing functions, making decisions, hitting errors.
-Never assume "standard practice" — search for prior patterns first.
+Never assume "standard practice" â€” search for prior patterns first.
 
 ### Phase 3: Store AFTER coding
 Store 1+ memory for non-trivial work: architecture decisions, implementation strategies, debug solutions, component relationships. Use `categories` for semantic grouping and `tags` for exact scoped retrieval.
@@ -73,7 +73,7 @@ Store 1+ memory for non-trivial work: architecture decisions, implementation str
 ## Query Guidance
 
 - Use natural language questions, not keywords: "How does the dedup pipeline work?" not "dedup pipeline"
-- Expand acronyms and add context: "auth" → "authentication system architecture and implementation"
+- Expand acronyms and add context: "auth" â†’ "authentication system architecture and implementation"
 - For broad recovery, use 3-4 targeted queries across different angles
 - Browse mode (no query) for cold-start inventory check
 
@@ -104,10 +104,10 @@ search_memory(tag: "mem0ai/mem0")
 add_memories(content: "...", tags: ["mem0ai/mem0", "session-8", "security"])
 ```
 
-**Tag stacking:** A memory can carry multiple tags — project, session, domain, other. `search_memory(tag: ...)` filters on a single tag at a time, so use the most specific one for retrieval.
+**Tag stacking:** A memory can carry multiple tags â€” project, session, domain, other. `search_memory(tag: ...)` filters on a single tag at a time, so use the most specific one for retrieval.
 
 ## Security
 
 **NEVER store:** API keys, tokens, passwords, private keys, credentials, connection strings with secrets.
 **Instead store:** Redacted patterns (`"uses bearer token auth"`), setup instructions (`"Set LLM_AZURE_OPENAI_API_KEY env var"`).
-**Deletion:** Use `add_memories(content: "Forget X")` — the intent classifier routes it automatically. No separate delete tool.
+**Deletion:** Use `add_memories(content: "Forget X")` â€” the intent classifier routes it automatically. No separate delete tool.

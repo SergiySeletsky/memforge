@@ -1,57 +1,57 @@
-## docker-compose.portainer.yml — OpenMemory production stack for Portainer / TrueNAS SCALE
+﻿## docker-compose.portainer.yml â€” MemForge production stack for Portainer / TrueNAS SCALE
 ##
 ## Deploy as a Portainer STACK (not individual container).
 ## Stack = Compose engine: handles multi-service ordering, volumes, health checks.
 ##
-## ── TrueNAS SCALE notes ──────────────────────────────────────────────────────
-## Uses plain named volumes — TrueNAS stores them at:
+## â”€â”€ TrueNAS SCALE notes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+## Uses plain named volumes â€” TrueNAS stores them at:
 ##   /mnt/.ix-apps/docker/volumes/<stackname>_memgraph-data/_data
-## They survive image version updates and are visible in Portainer → Volumes.
+## They survive image version updates and are visible in Portainer â†’ Volumes.
 ##
 ## vm.max_map_count is set by the init-sysctl service before Memgraph starts.
 ## TrueNAS SCALE kernel default is 65530 which is too low for HNSW indexes.
-## To persist across TrueNAS reboots, add to System → Advanced → Sysctl:
+## To persist across TrueNAS reboots, add to System â†’ Advanced â†’ Sysctl:
 ##   Key: vm.max_map_count   Value: 1048576
 ##
-## ── Image build ─────────────────────────────────────────────────────────────
+## â”€â”€ Image build â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 ## Build on any machine with Docker and push to a registry, then reference below.
-##   docker build -t your-registry/mem0/openmemory:latest .
-##   docker push your-registry/mem0/openmemory:latest
-## Update the openmemory image: line accordingly.
+##   docker build -t your-registry/memforge/memforge:latest .
+##   docker push your-registry/memforge/memforge:latest
+## Update the MemForge image: line accordingly.
 ##
-## ── Required stack environment variables (set in Portainer "Env" tab) ──────
+## â”€â”€ Required stack environment variables (set in Portainer "Env" tab) â”€â”€â”€â”€â”€â”€
 ##   OPENAI_API_KEY          your OpenAI API key
-##   OPENMEMORY_USER_ID      user slug shown in the UI (e.g. "serhii")
+##   MEMFORGE_USER_ID      user slug shown in the UI (e.g. "serhii")
 ## Optional:
-##   OPENMEMORY_PORT         host port for the UI (default 3000)
+##   MEMFORGE_PORT         host port for the UI (default 3000)
 ##   MEMGRAPH_PORT_BOLT      host port for Bolt (default 7687)
 ##   MEMGRAPH_PORT_LAB       host port for Memgraph Lab (default 7444)
-## ────────────────────────────────────────────────────────────────────────────
+## â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 ##############################################################################
 # Networks
 ##############################################################################
 networks:
-  openmemory-net:
+  memforge-net:
     driver: bridge
-    # Isolated internal network — only the mapped ports are exposed to the host
+    # Isolated internal network â€” only the mapped ports are exposed to the host
 
 ##############################################################################
-# Volumes — plain named volumes, no bind mounts.
+# Volumes â€” plain named volumes, no bind mounts.
 # TrueNAS SCALE / Portainer manages storage location automatically.
 # Data persists across container restarts and image version updates.
 ##############################################################################
 volumes:
   memgraph-data: {}
   memgraph-logs: {}
-  openmemory-data: {}
+  memforge-data: {}
 
 ##############################################################################
 # Services
 ##############################################################################
 services:
 
-  # ── 0. One-shot init container: sets vm.max_map_count on the host ─────────
+  # â”€â”€ 0. One-shot init container: sets vm.max_map_count on the host â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Memgraph HNSW vector index needs a high mmap limit.
   # This privileged init service sets it before Memgraph starts.
   # restart: "no" means it runs once per stack deploy/restart.
@@ -65,9 +65,9 @@ services:
       "
     restart: "no"
     networks:
-      - openmemory-net
+      - memforge-net
 
-  # ── 1. Memgraph MAGE ───────────────────────────────────────────────────────
+  # â”€â”€ 1. Memgraph MAGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   memgraph:
     image: memgraph/memgraph-mage:3.3
     restart: unless-stopped
@@ -75,9 +75,9 @@ services:
       init-sysctl:
         condition: service_completed_successfully
     networks:
-      - openmemory-net
+      - memforge-net
     ports:
-      - "${MEMGRAPH_PORT_BOLT:-7687}:7687"   # Bolt — neo4j-driver
+      - "${MEMGRAPH_PORT_BOLT:-7687}:7687"   # Bolt â€” neo4j-driver
       - "${MEMGRAPH_PORT_LAB:-7444}:7444"    # Memgraph Lab UI (optional)
     volumes:
       - memgraph-data:/var/lib/memgraph
@@ -91,7 +91,7 @@ services:
       - --storage-wal-enabled=true            # write-ahead log (crash safety)
       - --log-level=WARNING                   # reduce MAGE Python PyTorch noise
     healthcheck:
-      # mgconsole is available in the memgraph-mage image — reliable Bolt health check
+      # mgconsole is available in the memgraph-mage image â€” reliable Bolt health check
       test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole --no-history > /dev/null 2>&1 && echo ok || exit 1"]
       interval: 10s
       timeout: 5s
@@ -102,7 +102,7 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
-    # Resource limits — generous for 128 GB RAM host.
+    # Resource limits â€” generous for 128 GB RAM host.
     # Memgraph keeps the full graph in RAM; raise memgraph-data limit if your
     # graph grows beyond a few GB.
     deploy:
@@ -110,11 +110,11 @@ services:
         reservations:
           memory: 512m
         limits:
-          memory: 64g       # hard ceiling — raise to 64g if needed
+          memory: 64g       # hard ceiling â€” raise to 64g if needed
 
-  # ── 2. OpenMemory Next.js app ──────────────────────────────────────────────
-  openmemory:
-    image: mem0/openmemory:latest
+  # â”€â”€ 2. MemForge Next.js app â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  memforge:
+    image: memforge/memforge:latest
     # If using Portainer git integration with auto-build, replace `image` with:
     # build:
     #   context: ui/
@@ -124,12 +124,12 @@ services:
       memgraph:
         condition: service_healthy
     networks:
-      - openmemory-net
+      - memforge-net
     ports:
-      - "${OPENMEMORY_PORT:-3000}:3000"
+      - "${MEMFORGE_PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_USER_ID=${OPENMEMORY_USER_ID:-user}
+      - NEXT_PUBLIC_USER_ID=${MEMFORGE_USER_ID:-user}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - MEMGRAPH_URL=bolt://memgraph:7687
       - MEMGRAPH_USER=
@@ -142,7 +142,7 @@ services:
       - EMBEDDING_AZURE_OPENAI_API_KEY=${EMBEDDING_AZURE_OPENAI_API_KEY:-}
       - EMBEDDING_AZURE_ENDPOINT=${EMBEDDING_AZURE_ENDPOINT:-}
     volumes:
-      - openmemory-data:/app/data
+      - memforge-data:/app/data
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ > /dev/null 2>&1 && echo ok || exit 1"]
       interval: 15s

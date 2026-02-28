@@ -1,5 +1,5 @@
-/**
- * lib/memory/bulk.ts — Bulk Ingestion — Spec 06
+﻿/**
+ * lib/memory/bulk.ts â€” Bulk Ingestion â€” Spec 06
  *
  * Adds up to 500 memories in a single embedBatch() call + single Memgraph UNWIND transaction.
  *
@@ -17,9 +17,9 @@ import { runWrite } from "@/lib/db/memgraph";
 import { checkDeduplication } from "@/lib/dedup";
 import { processEntityExtraction } from "@/lib/entities/worker";
 import { categorizeMemory } from "@/lib/memory/categorize";
-import { Semaphore } from "@/lib/mem0/semaphore";
+import { Semaphore } from "@/lib/memforge/semaphore";
 
-// ── Types ──────────────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface BulkMemoryInput {
   text: string;
@@ -30,7 +30,7 @@ export interface BulkMemoryInput {
 
 export interface BulkAddOptions {
   userId: string;
-  /** App name to attach memories to via [:CREATED_BY]->(App). Defaults to "openmemory". */
+  /** App name to attach memories to via [:CREATED_BY]->(App). Defaults to "memforge". */
   appName?: string;
   /** Max parallel dedup checks. Defaults to min(5, floor(RPM/20)). */
   concurrency?: number;
@@ -50,14 +50,14 @@ export interface BulkMemoryResult {
   error?: string;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function getMaxConcurrency(): number {
   const rpmLimit = parseInt(process.env.OPENAI_REQUESTS_PER_MINUTE ?? "60");
   return Math.min(5, Math.floor(rpmLimit / 20));
 }
 
-// ── Core function ──────────────────────────────────────────────────────────
+// â”€â”€ Core function â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Add multiple memories to Memgraph using a single embedBatch() call and a single
@@ -69,19 +69,19 @@ export async function bulkAddMemories(
 ): Promise<BulkMemoryResult[]> {
   const {
     userId,
-    appName = "openmemory",
+    appName = "memforge",
     concurrency = getMaxConcurrency(),
     dedupEnabled = true,
     onProgress,
   } = opts;
 
-  // Initialise results — will be mutated as items are classified.
+  // Initialise results â€” will be mutated as items are classified.
   const results: BulkMemoryResult[] = items.map((item) => ({
     text: item.text,
     status: "added" as const,
   }));
 
-  // ── Stage 1: In-batch exact dedup (case-insensitive) ──────────────────
+  // â”€â”€ Stage 1: In-batch exact dedup (case-insensitive) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const seen = new Set<string>();
   const uniqueIndices: number[] = [];
 
@@ -95,7 +95,7 @@ export async function bulkAddMemories(
     }
   }
 
-  // ── Stage 2: Cross-store near-dedup ───────────────────────────────────
+  // â”€â”€ Stage 2: Cross-store near-dedup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const toProcess: number[] = [];
 
   if (dedupEnabled && uniqueIndices.length > 0) {
@@ -128,11 +128,11 @@ export async function bulkAddMemories(
 
   if (toProcess.length === 0) return results;
 
-  // ── Stage 3: Single embedBatch for all surviving items ────────────────
+  // â”€â”€ Stage 3: Single embedBatch for all surviving items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const textsToEmbed = toProcess.map((i) => items[i].text);
   const embeddings = await embedBatch(textsToEmbed);
 
-  // ── Stage 4: Prepare nodes ────────────────────────────────────────────
+  // â”€â”€ Stage 4: Prepare nodes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const now = new Date().toISOString();
 
   interface MemoryWriteNode {
@@ -142,7 +142,7 @@ export async function bulkAddMemories(
     validAt: string;
     createdAt: string;
     state: string;
-    origIdx: number; // NOT sent to Memgraph — for result mapping only
+    origIdx: number; // NOT sent to Memgraph â€” for result mapping only
   }
 
   const memoriesForWrite: MemoryWriteNode[] = toProcess.map((origIdx, i) => ({
@@ -165,7 +165,7 @@ export async function bulkAddMemories(
     { userId, userNow, appName }
   );
 
-  // ── Stage 5: Single UNWIND + CREATE transaction ───────────────────────
+  // â”€â”€ Stage 5: Single UNWIND + CREATE transaction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const writeNodes = memoriesForWrite.map(
     ({ origIdx: _discarded, ...rest }) => rest
   );
@@ -191,7 +191,7 @@ export async function bulkAddMemories(
     { memories: writeNodes, userId, appName }
   );
 
-  // ── Stage 6: Update results + fire-and-forget entity extraction ───────
+  // â”€â”€ Stage 6: Update results + fire-and-forget entity extraction â”€â”€â”€â”€â”€â”€â”€
   let completed = items.length - toProcess.length; // already-skipped count
   for (const mem of memoriesForWrite) {
     results[mem.origIdx] = {

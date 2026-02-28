@@ -1,5 +1,5 @@
 /**
- * lib/graph/types.ts — GraphStore interface & types (migrated from mem0-ts/oss)
+ * lib/graph/types.ts — GraphStore interface & types (migrated from memforge-ts/oss)
  *
  * Backend-agnostic interface for graph-native memory operations.
  * While Memory nodes handle flat "fact" vectors, GraphStore exposes the

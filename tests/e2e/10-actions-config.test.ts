@@ -1,13 +1,13 @@
-/**
- * E2E — Memory actions (archive, pause) & config
+﻿/**
+ * E2E â€” Memory actions (archive, pause) & config
  *
  * Covers:
- *   POST /api/v1/memories/actions/archive  – archive a set of memory IDs
- *   GET  /api/v1/config                    – read current config
- *   PUT  /api/v1/config                    – update config (roundtrip)
- *   GET  /api/v1/config/mem0/llm           – LLM sub-config
- *   GET  /api/v1/config/mem0/embedder      – embedder sub-config
- *   GET  /api/v1/config/mem0/vector_store  – vector store sub-config
+ *   POST /api/v1/memories/actions/archive  â€“ archive a set of memory IDs
+ *   GET  /api/v1/config                    â€“ read current config
+ *   PUT  /api/v1/config                    â€“ update config (roundtrip)
+ *   GET  /api/v1/config/memforge/llm           â€“ LLM sub-config
+ *   GET  /api/v1/config/memforge/embedder      â€“ embedder sub-config
+ *   GET  /api/v1/config/memforge/vector_store  â€“ vector store sub-config
  */
 
 import { api, asObj, MemoryTracker, RUN_ID } from "./helpers";
@@ -35,7 +35,7 @@ describe("POST /api/v1/memories/actions/archive", () => {
     });
     const b = asObj(body);
     idToArchive = b.id as string;
-    // NOTE: do NOT add to tracker — archiving is the test itself
+    // NOTE: do NOT add to tracker â€” archiving is the test itself
   });
 
   it("archives memory IDs and returns 200", async () => {
@@ -98,7 +98,7 @@ describe("GET /api/v1/config", () => {
   it("returns 200 with a config object", async () => {
     const { status, body } = await api("/api/v1/config");
     expect(status).toBe(200);
-    // Config is stored as key-value pairs in Memgraph — may be empty on fresh DB
+    // Config is stored as key-value pairs in Memgraph â€” may be empty on fresh DB
     // Just verify it's a valid JSON object (not an array, not null)
     const b = asObj(body);
     expect(typeof b).toBe("object");
@@ -107,25 +107,25 @@ describe("GET /api/v1/config", () => {
 });
 
 // ---------------------------------------------------------------------------
-describe("GET /api/v1/config/mem0/llm", () => {
+describe("GET /api/v1/config/memforge/llm", () => {
   it("returns 200 or 410 (env-only config)", async () => {
-    const { status } = await api("/api/v1/config/mem0/llm");
+    const { status } = await api("/api/v1/config/memforge/llm");
     // 410 = LLM config is managed via env vars (not at runtime)
     expect([200, 410]).toContain(status);
   });
 });
 
-describe("GET /api/v1/config/mem0/embedder", () => {
+describe("GET /api/v1/config/memforge/embedder", () => {
   it("returns 200 or 410 (env-only config)", async () => {
-    const { status } = await api("/api/v1/config/mem0/embedder");
+    const { status } = await api("/api/v1/config/memforge/embedder");
     // 410 = Embedder config is managed via env vars (not at runtime)
     expect([200, 410]).toContain(status);
   });
 });
 
-describe("GET /api/v1/config/mem0/vector_store", () => {
+describe("GET /api/v1/config/memforge/vector_store", () => {
   it("returns 200 with vector store config", async () => {
-    const { status, body } = await api("/api/v1/config/mem0/vector_store");
+    const { status, body } = await api("/api/v1/config/memforge/vector_store");
     expect(status).toBe(200);
     const b = asObj(body);
     expect(b.provider ?? b.url ?? b.config).toBeDefined();
@@ -133,11 +133,11 @@ describe("GET /api/v1/config/mem0/vector_store", () => {
 });
 
 // ---------------------------------------------------------------------------
-describe("PUT /api/v1/config — roundtrip", () => {
-  it("writes a openmemory config key and reads it back", async () => {
+describe("PUT /api/v1/config â€” roundtrip", () => {
+  it("writes a memforge config key and reads it back", async () => {
     // First read current config
     const { status: readStatus, body: readBody } = await api(
-      "/api/v1/config/openmemory"
+      "/api/v1/config/memforge"
     );
     expect(readStatus).toBe(200);
     const current = asObj(readBody);
@@ -147,19 +147,19 @@ describe("PUT /api/v1/config — roundtrip", () => {
       ...(current as Record<string, unknown>),
       _e2e_test_marker: `run-${RUN_ID}`,
     };
-    const { status: writeStatus } = await api("/api/v1/config/openmemory", {
+    const { status: writeStatus } = await api("/api/v1/config/memforge", {
       method: "PUT",
       body: testPayload,
     });
     expect([200, 204]).toContain(writeStatus);
 
-    // Read back and verify (optional — may not persist in-memory)
+    // Read back and verify (optional â€” may not persist in-memory)
     const { status: verifyStatus, body: verifyBody } = await api(
-      "/api/v1/config/openmemory"
+      "/api/v1/config/memforge"
     );
     expect(verifyStatus).toBe(200);
     const verified = asObj(verifyBody);
-    // May or may not persist — just assert 200 round-trip
+    // May or may not persist â€” just assert 200 round-trip
     expect(verified).toBeDefined();
   });
 });

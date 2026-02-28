@@ -1,7 +1,7 @@
-/**
- * POST /api/mcp/messages — generic MCP messages endpoint
+﻿/**
+ * POST /api/mcp/messages â€” generic MCP messages endpoint
  *
- * Port of openmemory/api/app/mcp_server.py: @mcp_router.post("/messages/")
+ * Port of MemForge/api/app/mcp_server.py: @mcp_router.post("/messages/")
  *
  * Some MCP clients use this generic path instead of the parameterized
  * /:clientName/sse/:userId/messages path, but still pass sessionId as

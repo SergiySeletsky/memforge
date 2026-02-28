@@ -1,7 +1,7 @@
 /**
  * GET /mcp/:clientName/sse/:userId — SSE endpoint for MCP connections
  *
- * Port of openmemory/api/app/mcp_server.py (GET /mcp/{client_name}/sse/{user_id})
+ * Port of MemForge/api/app/mcp_server.py (GET /mcp/{client_name}/sse/{user_id})
  *
  * Establishes an SSE connection and serves the MCP protocol using a custom
  * NextSSETransport that bridges Next.js App Router streaming with the MCP SDK.

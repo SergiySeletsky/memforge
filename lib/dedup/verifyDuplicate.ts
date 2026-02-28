@@ -1,12 +1,12 @@
-/**
- * lib/dedup/verifyDuplicate.ts — Stage 2 LLM verification
+﻿/**
+ * lib/dedup/verifyDuplicate.ts â€” Stage 2 LLM verification
  *
  * Given two memory strings, asks an LLM to classify their relationship:
- *   DUPLICATE   — same fact, possibly different words
- *   SUPERSEDES  — new memory updates or contradicts the existing one
- *   DIFFERENT   — genuinely distinct facts (no dedup action needed)
+ *   DUPLICATE   â€” same fact, possibly different words
+ *   SUPERSEDES  â€” new memory updates or contradicts the existing one
+ *   DIFFERENT   â€” genuinely distinct facts (no dedup action needed)
  *
- * Enhanced with few-shot examples adapted from mem0-ts/oss fact-comparison
+ * Enhanced with few-shot examples adapted from memforge-ts/oss fact-comparison
  * prompt to improve classification accuracy on nuanced cases:
  *   - Paraphrased facts (DUPLICATE, not DIFFERENT)
  *   - Same topic with richer detail (SUPERSEDES, not DUPLICATE)
@@ -27,7 +27,7 @@ Given two memory statements from the same user, determine their relationship.
 
 ### Categories
 
-- **DUPLICATE**: Both statements express the same fact — same meaning, possibly different words. Minor wording changes or paraphrases that do not add or change information.
+- **DUPLICATE**: Both statements express the same fact â€” same meaning, possibly different words. Minor wording changes or paraphrases that do not add or change information.
 - **SUPERSEDES**: Statement B updates, enriches, or contradicts Statement A. B is newer, more specific, or reverses the claim in A. When in doubt between DUPLICATE and SUPERSEDES, choose SUPERSEDES if B adds any new detail.
 - **DIFFERENT**: The statements express genuinely distinct facts about different topics or attributes.
 
@@ -35,31 +35,31 @@ Given two memory statements from the same user, determine their relationship.
 
 A: "Likes cheese pizza"
 B: "Loves cheese pizza"
-→ DUPLICATE (same preference, minor wording difference)
+â†’ DUPLICATE (same preference, minor wording difference)
 
 A: "User likes to play cricket"
 B: "Loves to play cricket with friends"
-→ SUPERSEDES (B adds new detail: "with friends")
+â†’ SUPERSEDES (B adds new detail: "with friends")
 
 A: "I really like cheese pizza"
 B: "Loves chicken pizza"
-→ SUPERSEDES (same topic — pizza preference — but the specific preference changed)
+â†’ SUPERSEDES (same topic â€” pizza preference â€” but the specific preference changed)
 
 A: "Loves cheese pizza"
 B: "Dislikes cheese pizza"
-→ SUPERSEDES (direct contradiction — preference reversed)
+â†’ SUPERSEDES (direct contradiction â€” preference reversed)
 
 A: "Name is John"
 B: "Loves cheese pizza"
-→ DIFFERENT (unrelated topics: identity vs food preference)
+â†’ DIFFERENT (unrelated topics: identity vs food preference)
 
 A: "I moved to London"
 B: "I live in NYC"
-→ SUPERSEDES (same topic — residence — with updated location)
+â†’ SUPERSEDES (same topic â€” residence â€” with updated location)
 
 A: "I prefer dark mode"
 B: "Dark theme is my preference"
-→ DUPLICATE (identical meaning)
+â†’ DUPLICATE (identical meaning)
 
 ### Instructions
 
@@ -74,7 +74,7 @@ export async function verifyDuplicate(
   existingMemory: string
 ): Promise<VerificationResult> {
   const client = getLLMClient();
-  const model = process.env.LLM_AZURE_DEPLOYMENT ?? process.env.OPENMEMORY_CATEGORIZATION_MODEL ?? "gpt-4o-mini";
+  const model = process.env.LLM_AZURE_DEPLOYMENT ?? process.env.MEMFORGE_CATEGORIZATION_MODEL ?? "gpt-4o-mini";
 
   const response = await client.chat.completions.create({
     model,

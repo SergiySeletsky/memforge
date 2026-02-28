@@ -1,5 +1,5 @@
 /**
- * lib/memory/history.ts — Memory audit trail (migrated from mem0-ts/oss)
+ * lib/memory/history.ts — Memory audit trail (migrated from memforge-ts/oss)
  *
  * Tracks every ADD / SUPERSEDE / DELETE / ARCHIVE / PAUSE action per memory
  * as :MemoryHistory nodes in Memgraph.

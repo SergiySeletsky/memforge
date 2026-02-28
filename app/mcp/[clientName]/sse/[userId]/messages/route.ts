@@ -1,7 +1,7 @@
 /**
  * POST /api/mcp/:clientName/sse/:userId/messages — receive MCP messages
  *
- * Port of openmemory/api/app/mcp_server.py (POST /mcp/messages/)
+ * Port of MemForge/api/app/mcp_server.py (POST /mcp/messages/)
  *
  * The MCP client POSTs JSON-RPC messages here; they are forwarded to the
  * active NextSSETransport for the session, which invokes the MCP server's
