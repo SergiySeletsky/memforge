@@ -1,4 +1,4 @@
-name: ci
+name: CI
 
 on:
   push:
@@ -6,100 +6,101 @@ on:
     paths:
       - 'mem0/**'
       - 'tests/**'
-      - 'embedchain/**'
   pull_request:
     paths:
       - 'mem0/**'
       - 'tests/**'
-      - 'embedchain/**'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  check_changes:
+  typecheck:
+    name: TypeScript
     runs-on: ubuntu-latest
-    outputs:
-      mem0_changed: ${{ steps.filter.outputs.mem0 }}
-      embedchain_changed: ${{ steps.filter.outputs.embedchain }}
     steps:
-    - uses: actions/checkout@v3
-    - uses: dorny/paths-filter@v2
-      id: filter
-      with:
-        filters: |
-          mem0:
-            - 'mem0/**'
-            - 'tests/**'
-          embedchain:
-            - 'embedchain/**'
+      - uses: actions/checkout@v4
 
-  build_mem0:
-    needs: check_changes
-    if: needs.check_changes.outputs.mem0_changed == 'true'
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - uses: pnpm/action-setup@v4
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install Hatch
-        run: pip install hatch
-      - name: Load cached venv
-        id: cached-hatch-dependencies
-        uses: actions/cache@v3
-        with:
-          path: .venv
-          key: venv-mem0-${{ runner.os }}-${{ hashFiles('**/pyproject.toml') }}
-      - name: Install GEOS Libraries
-        run: sudo apt-get update && sudo apt-get install -y libgeos-dev
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -e ".[test,graph,vector_stores,llms,extras]"
-          pip install ruff
-        if: steps.cached-hatch-dependencies.outputs.cache-hit != 'true'
-      - name: Run Linting
-        run: make lint
-      - name: Run tests and generate coverage report
-        run: make test
+          version: 9
 
-  build_embedchain:
-    needs: check_changes
-    if: needs.check_changes.outputs.embedchain_changed == 'true'
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - uses: actions/setup-node@v4
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install Hatch
-        run: pip install hatch
-      - name: Load cached venv
-        id: cached-hatch-dependencies
-        uses: actions/cache@v3
-        with:
-          path: .venv
-          key: venv-embedchain-${{ runner.os }}-${{ hashFiles('**/pyproject.toml') }}
+          node-version: 18
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
       - name: Install dependencies
-        run: cd embedchain && make install_all
-        if: steps.cached-hatch-dependencies.outputs.cache-hit != 'true'
-      - name: Run Formatting
-        run: |
-          mkdir -p embedchain/.ruff_cache && chmod -R 777 embedchain/.ruff_cache
-          cd embedchain && hatch run format
-      - name: Lint with ruff
-        run: cd embedchain && make lint
-      - name: Run tests and generate coverage report
-        run: cd embedchain && make coverage
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v3
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm exec tsc --noEmit
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
         with:
-          file: coverage.xml
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: ESLint
+        run: pnpm lint
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run unit tests
+        run: pnpm test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [typecheck, lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Next.js
+        run: pnpm build
