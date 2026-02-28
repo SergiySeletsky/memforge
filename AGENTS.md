@@ -133,11 +133,13 @@ const drainMs = Math.min(PER_ITEM_DRAIN_MAX_MS, batchDrainDeadline - Date.now())
 
 ## Known Pre-existing Issues
 
-| ID | File | Description |
-|----|------|-------------|
-| TS-001 | `app/api/v1/entities/[entityId]/route.ts` | `.next/types` TS2344 error (activeTransports in MCP SSE) â€” Next.js type generation artifact, ignore |
-| TEST-001 | `tests/unit/entities/resolve.test.ts` | 3 tests require live Memgraph for semantic dedup â€” skip in CI |
-| E2E-001 | `tests/e2e/06-search.test.ts` | Requires running Memgraph + populated data â€” skip in CI |
+All previously documented pre-existing issues have been resolved:
+
+| ID | Status | Resolution |
+|----|--------|------------|
+| TS-001 | FIXED (Session 12) | Removed `export { activeTransports }` re-export from SSE route file — Next.js route modules must only export handlers |
+| TEST-001 | FIXED (prior session) | All 19 resolve.test.ts tests pass — semantic dedup tests are fully mocked, no live Memgraph needed |
+| E2E-001 | N/A | E2E tests excluded from `pnpm test` via jest.config.ts `testMatch` (Session 5); run separately via `pnpm test:e2e` |
 
 ---
 
@@ -778,4 +780,124 @@ Dev server restart (stale SSE connection) â€" compact `add_memories` format v
 
 ### Verification
 - `tsc --noEmit`: 1 pre-existing error only (TS-001: `.next/types` MCP SSE route)
-- `jest --runInBand --no-coverage`: **43 suites / 388 tests â€" ALL PASS**
+- `jest --runInBand --no-coverage`: **43 suites / 388 tests — ALL PASS**
+
+---
+
+## Session 11 — GraphRAG-Inspired Pipeline + CI/CD Modernization
+
+### Phase 1: GitHub Workflows Audit & Fix
+
+All 3 workflow files were from the original Python `mem0` OSS project — completely incompatible with the Next.js/pnpm monolith.
+
+| File | Before | After |
+|------|--------|-------|
+| `.github/workflows/ci.yml` | Python: pip/hatch/ruff | 4 parallel jobs: typecheck, lint, test, build (pnpm 9, node 18) |
+| `.github/workflows/cd.yml` | PyPI publishing | Docker build + push to GHCR (Buildx + GHA cache, semver tags) |
+| `.github/workflows/copilot-setup-steps.yml` | npm, `npx run build` | pnpm setup, `pnpm install --frozen-lockfile`, `pnpm build` |
+
+### Phase 2: GraphRAG Deep Analysis
+
+Researched Microsoft GraphRAG via DeepWiki. Compared entity extraction, community detection, graph pruning, relationship extraction against MemForge's existing pipeline. Produced ranked recommendations (P0–P4).
+
+### Phase 3: GraphRAG Implementation (6 features)
+
+**Key design decision:** Cross-user community detection is **intentional** — shared knowledge across users/projects is a core value proposition. NOT a security bug.
+
+#### P0 — Wire Relationship Extraction into Write Pipeline
+- **New file: `lib/entities/relate.ts`** (~55 lines)
+  - `linkEntities(sourceId, targetId, relType, description)` — MERGE with ON CREATE/ON MATCH
+  - Keeps longer description on conflict; type stored as property (not edge label)
+  - relType normalized: uppercase + spaces→underscores
+- **Worker Step 7**: After entity resolution, relationships from combined extraction are resolved to entity IDs and linked via `linkEntities()`. Dangling references (entity not in extraction) silently skipped.
+
+#### P1 — Entity Description Summarization
+- **New file: `lib/entities/summarize-description.ts`** (~83 lines)
+  - `summarizeEntityDescription(entityId, entityName, incomingDescription)` — LLM consolidation
+  - Skip conditions: empty incoming, no existing, identical descriptions
+  - Uses `ENTITY_DESCRIPTION_SUMMARIZE_PROMPT` with `{entityName}`, `{descriptionA}`, `{descriptionB}` placeholders
+- **Worker Step 8**: Fire-and-forget for Tier 1 hits (entities that already existed before this memory). `.catch()` prevents pipeline disruption.
+
+#### P2 — Gleaning (Multi-Pass Extraction)
+- **Rewritten: `lib/entities/extract.ts`**
+  - `extractEntitiesAndRelationships(content)` — single LLM call returns `{ entities, relationships }`
+  - Gleaning loop: `MEMFORGE_MAX_GLEANINGS` env var (default 1, cap 3), uses `GLEANING_PROMPT`
+  - Deduplicates gleaned entities by name, relationships by `(source, target, type)` triple
+  - Backward-compatible: `extractEntitiesFromMemory()` wrapper still exported
+
+#### P2 — Hierarchical Community Detection
+- **Rewritten: `lib/clusters/build.ts`**
+  - `rebuildClusters(userId)` — cross-user global graph (intentional), Louvain via MAGE
+  - L0 + L1 hierarchy: groups >= `SUBCOMMUNITY_THRESHOLD` (8) get L1 subcommunities
+  - `[:SUBCOMMUNITY_OF]` edges connect L1→L0 community nodes
+  - `CommunityNode` interface exported with `level`, `parentId` properties
+  - Constants: `MIN_COMMUNITY_SIZE=2`, `SUBCOMMUNITY_THRESHOLD=8`, `MAX_LEVELS=2`
+
+#### P4 — Combined Extraction Prompt
+- **Modified: `lib/entities/prompts.ts`**
+  - `ENTITY_EXTRACTION_PROMPT` now requests both `entities[]` and `relationships[]` in JSON
+  - Added `GLEANING_PROMPT` with `{previousEntities}` placeholder
+  - Added `ENTITY_DESCRIPTION_SUMMARIZE_PROMPT`
+
+### Files Created (3)
+| File | Lines | Purpose |
+|------|-------|---------|
+| `lib/entities/relate.ts` | 55 | [:RELATED_TO] edge MERGE between entities |
+| `lib/entities/summarize-description.ts` | 83 | LLM entity description consolidation |
+| `tests/unit/entities/relate.test.ts` | 55 | 3 tests: RELATE_01–03 |
+| `tests/unit/entities/summarize-description.test.ts` | 95 | 5 tests: SUM_01–05 |
+
+### Files Rewritten (delete + recreate due to encoding issues)
+| File | Purpose |
+|------|---------|
+| `lib/entities/extract.ts` | Combined extraction + gleaning |
+| `lib/entities/worker.ts` | 9-step pipeline orchestrator |
+| `lib/clusters/build.ts` | Hierarchical community detection |
+| `tests/unit/entities/worker.test.ts` | 9 tests: WORKER_01–09 |
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `lib/entities/prompts.ts` | Combined extraction prompt, gleaning prompt, description summarize prompt |
+| `.github/workflows/ci.yml` | Full rewrite for Next.js/pnpm |
+| `.github/workflows/cd.yml` | Full rewrite for Docker/GHCR |
+| `.github/workflows/copilot-setup-steps.yml` | npm→pnpm fix |
+
+### Test Results
+| Test File | Count | Status |
+|-----------|-------|--------|
+| `worker.test.ts` | 9 | PASS (WORKER_01–09) |
+| `relate.test.ts` | 3 | PASS (RELATE_01–03) |
+| `summarize-description.test.ts` | 5 | PASS (SUM_01–05) |
+| `extract.test.ts` | 4 | PASS (pre-existing + new) |
+| `build.test.ts` | 2 | PASS |
+| **Full suite** | **398 tests, 45 suites** | **ALL PASS** |
+
+### Verification
+- `tsc --noEmit`: 1 pre-existing error only (TS-001)
+- `jest --runInBand --no-coverage`: **45 suites / 398 tests — 0 failures**
+
+---
+
+## Session 12 — Pre-existing Error Resolution
+
+### Objective
+Fix all documented pre-existing errors (TS-001, TEST-001, E2E-001).
+
+### TS-001 — `.next/types` TS2344 error (activeTransports re-export)
+**Root cause:** `app/mcp/[clientName]/sse/[userId]/route.ts` had `export { activeTransports }` — a `Map<string, NextSSETransport>` re-export. Next.js App Router type checker (`checkFields<Diff<...>>()`) requires route modules only export valid route handlers (`GET`, `POST`, etc.) and config (`dynamic`, `revalidate`, etc.). A `Map` export violates the index signature constraint `{ [x: string]: never }`.
+
+**Fix:** Removed `export { activeTransports };` from the route file. All consumers already import from `@/lib/mcp/registry` directly — the re-export was dead code.
+
+### TEST-001 — resolve.test.ts "requires live Memgraph"
+**Status:** Already fixed in prior session. All 19 tests pass with full mocking — semantic dedup tests (RESOLVE_13, 14, 15) mock `embed()`, `getLLMClient()`, `runRead`, and `runWrite`. No live Memgraph needed.
+
+### E2E-001 — e2e tests require running server
+**Status:** Already handled (Session 5). `jest.config.ts` `testMatch` excludes e2e from `pnpm test`. E2E runs via `pnpm test:e2e` only.
+
+### Additional fix: worker.ts implicit `any`
+Added `err: unknown` type annotation to `.catch()` callback in `summarizeEntityDescription` fire-and-forget call.
+
+### Verification
+- `tsc --noEmit`: **0 errors** (first time ever — TS-001 resolved)
+- `jest --runInBand --no-coverage`: **45 suites / 398 tests — 0 failures**

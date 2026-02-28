@@ -10,7 +10,6 @@ import { NextRequest } from "next/server";
 import { createMcpServer } from "@/lib/mcp/server";
 import { NextSSETransport } from "@/lib/mcp/transport";
 import { activeTransports } from "@/lib/mcp/registry";
-export { activeTransports };
 
 type RouteParams = { params: Promise<{ clientName: string; userId: string }> };
 
