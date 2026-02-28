@@ -86,13 +86,13 @@ Store 1+ memory for non-trivial work: architecture decisions, implementation str
 
 ## Project / Repo Scoping
 
-There is no dedicated `project_id` param — use **tags** for project-level isolation.
+use **tags** for project-level isolation adding project name or git repo name etc.
 
 **Convention:** Tag with the repo slug (e.g. `"mem0ai/mem0"`) so memories are retrievable per-project.
 
 ```jsonc
 // Store a project-scoped memory:
-add_memories(content: "Auth uses JWT with 15min expiry", tags: ["mem0ai/mem0"])
+add_memories(content: "Auth uses JWT with 15min expiry", tags: ["mem0ai/mem0", "optimization"]])
 
 // Retrieve only this project's memories:
 search_memory(query: "auth architecture", tag: "mem0ai/mem0")
@@ -100,14 +100,14 @@ search_memory(query: "auth architecture", tag: "mem0ai/mem0")
 // Browse all memories for this project:
 search_memory(tag: "mem0ai/mem0")
 
-// Combine project + session tags:
-add_memories(content: "...", tags: ["mem0ai/mem0", "session-8"])
+// Combine project + session tags + other tags:
+add_memories(content: "...", tags: ["mem0ai/mem0", "session-8", "security"])
 ```
 
-**Tag stacking:** A memory can carry multiple tags — project, session, domain. `search_memory(tag: ...)` filters on a single tag at a time, so use the most specific one for retrieval.
+**Tag stacking:** A memory can carry multiple tags — project, session, domain, other. `search_memory(tag: ...)` filters on a single tag at a time, so use the most specific one for retrieval.
 
 ## Security
 
 **NEVER store:** API keys, tokens, passwords, private keys, credentials, connection strings with secrets.
-**Instead store:** Redacted patterns (`"uses bearer token auth"`), setup instructions (`"Set OPENAI_API_KEY env var"`).
+**Instead store:** Redacted patterns (`"uses bearer token auth"`), setup instructions (`"Set LLM_AZURE_OPENAI_API_KEY env var"`).
 **Deletion:** Use `add_memories(content: "Forget X")` — the intent classifier routes it automatically. No separate delete tool.

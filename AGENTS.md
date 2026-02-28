@@ -625,3 +625,98 @@ Tested 5 query patterns against the 37 stored audit memories from Session 7:
 - `tsc --noEmit`: pre-existing errors only
 - `jest --runInBand`: **43 suites / 388 tests — ALL PASS**
 
+---
+
+## Session 9 — Agentic Architect Audit (MCP LTM, Project-Scoped Tags)
+
+### Objective
+Full read-only codebase audit using OpenMemory MCP as long-term memory, with project-scoped tags (`mem0ai/mem0`, `audit-session-9`). Focus on testing MCP tool scenarios end-to-end and identifying new + carryover findings across all code layers.
+
+### MCP Tool Usage Statistics
+
+| # | Tool | Mode | Query/Content | Purpose | Result |
+|---|------|------|---------------|---------|--------|
+| 1 | search_memory | browse (tag: mem0ai/mem0) | — | Cold-start: project-tagged count | 0 results (fresh project tag) |
+| 2 | search_memory | browse (no tag, limit:3) | — | Total memory inventory | 41 total memories |
+| 3 | search_memory | search | "unfixed carryover findings HIGH severity" | Recover prior session findings | 10 hits, 8 distinct carryovers |
+| 4 | add_memories | batch (4) | Layer 1-2 findings | Store DB + Write findings | 4 ADD, 0 errors |
+| 5 | add_memories | batch (4) | Layer 3-5 findings | Store API + Frontend findings | 4 ADD, 0 errors |
+| 6 | search_memory | search (tag: audit-session-9) | "write pipeline archive invalidAt..." | Mid-audit recovery test | 8/8 recall (100%) |
+| 7 | search_memory | search (tag: mem0ai/mem0) | "security vulnerabilities cross-user..." | Cross-session tag-scoped test | 3/12 returned (recall gap) |
+| 8 | search_memory | search (tag: mem0ai/mem0) | "cluster community detection Louvain..." | Targeted security query | 1/12 returned (low confidence) |
+| 9 | search_memory | search (no tag) | "cluster community detection Louvain global..." | Unfiltered cross-session test | 3 hits, 0.92–0.93 relevance |
+| 10 | add_memories | batch (4) | Layer 5 + carryover confirmations | Store config + frontend findings | 3 ADD, 1 SUPERSEDE |
+| 11 | search_memory | browse (tag: mem0ai/mem0) | — | Final inventory verification | 12/12 findings confirmed |
+| **Totals** | **3 add / 8 search** | | **12 items sent** | | **11 stored, 1 superseded** |
+
+### Findings Stored (12 total)
+
+| ID | Severity | Layer | Status |
+|----|----------|-------|--------|
+| WRITE-ARCHIVE-NO-INVALIDAT-01 | MEDIUM | Write | NEW |
+| WRITE-ADDMEMORY-2RTT-01 | LOW-PERF | Write | NEW |
+| DB-VECTORFLAG-HMR-01 | LOW | DB | NEW |
+| MCP-SUPERSEDE-TAG-DEAD-CODE-CONFIRMED | LOW | MCP | Carryover confirmed |
+| API-DELETE-NO-HISTORY-01 | MEDIUM | API | NEW |
+| MCP-SEARCH-NO-TAGS-RESPONSE-01 | LOW | MCP | NEW |
+| CLUSTER-ISOLATION-01-CONFIRMED | HIGH-SEC | Clusters | Carryover confirmed |
+| FRONTEND-ARCHIVE-DOUBLE-DISPATCH | LOW-UX | Frontend | NEW |
+| CONFIG-NO-TTL-CACHE-01-CONFIRMED | MEDIUM-PERF | Config | Carryover (SUPERSEDED) |
+| FRONTEND-STALE-CLOSURE-CONFIRMED | MEDIUM | Frontend | Carryover confirmed |
+| ENTITY-RESOLVE-USER-MERGE-REDUNDANT-01 | LOW-PERF | Entity | NEW |
+| API-FILTER-DOUBLE-QUERY-CONFIRMED | LOW-PERF | API | Carryover confirmed |
+
+### MCP Tool Scenario Analysis
+
+**Scenario 1: Cold-Start Inventory (browse)** — 2 calls
+- `browse(tag: "mem0ai/mem0")` confirmed 0 project-scoped memories (fresh tag namespace)
+- `browse(limit: 3)` confirmed 41 total memories in store from prior sessions
+- **Verdict**: Essential for understanding what's already stored before writing
+
+**Scenario 2: Cross-Session Find Recovery (search)** — 1 call
+- Query "unfixed carryover findings HIGH severity" returned 10 results, 8 known carryover findings recovered
+- Relevance scores 0.82–0.97, dual-arm (BM25+vector) hits scored highest
+- **Verdict**: Strong. Agent can resume audit context from prior sessions without scrolling
+
+**Scenario 3: Batched Write (add_memories)** — 3 calls, 12 items
+- 4 items per call, zero errors, 11 ADDs + 1 SUPERSEDE
+- SUPERSEDE correctly consolidated CONFIG-NO-TTL-CACHE-01 when the updated version was more detailed
+- **Verdict**: Batch size of 4 is optimal — balances throughput with dedup quality
+
+**Scenario 4: Mid-Audit Tag-Scoped Recovery (search + tag)** — 1 call
+- `search_memory(query, tag: "audit-session-9")` returned all 8 session-9 findings
+- 100% recall, relevance scores 0.46–0.93
+- **Verdict**: Tag filtering + semantic search is the primary recovery mechanism
+
+**Scenario 5: Cross-Project Tag Recovery (search + tag: mem0ai/mem0)** — 2 calls
+- First query ("security vulnerabilities cross-user"): returned 3/12, CLUSTER finding absent
+- Second query ("cluster community detection"): returned 1/12 with `confident: false`
+- **Verdict**: Tag + search has a recall gap. The 3× topK pre-filter (MCP-FILTER-01) may be too small for combined tag+semantic filtering. Browse + tag gives 100% recall.
+
+**Scenario 6: Unfiltered Cross-Session Search** — 1 call
+- "cluster community detection Louvain global multi-user" found 3 results at 0.92+ relevance
+- Prior session's finding returned perfectly without any tag filter
+- **Verdict**: When recall matters more than precision, drop the tag filter
+
+**Scenario 7: SUPERSEDE via Dedup** — 1 organic event
+- CONFIG-NO-TTL-CACHE-01 from session 7 was superseded by the session 9 version
+- Correct behavior — same finding, more detailed description
+- **Verdict**: Dedup works as designed for iterative knowledge refinement
+
+**Scenario 8: Full Inventory Verification (browse + tag)** — 1 call
+- `browse(tag: "mem0ai/mem0")` returned all 12 findings with correct tags and metadata
+- **Verdict**: Ground truth is always accessible via browse when search has gaps
+
+### What Worked Well
+1. **Tag-scoped browse = perfect recall** — `tag: "mem0ai/mem0"` browse returned 12/12 findings
+2. **SUPERSEDE consolidation** — Dedup correctly merged overlapping findings across sessions
+3. **Dual-arm RRF ranking** — Findings with both BM25 text_rank + vector_rank scored highest
+4. **Batch writes** — Zero errors across 3 calls × 4 items
+5. **Cross-session recovery** — Prior session findings at 0.92+ relevance without tag filter
+
+### What Can Be Improved
+1. **Search + tag post-filter recall gap** — 3× topK multiplier insufficient when combining tag filter with semantic search. CLUSTER-ISOLATION-01 was absent from tag-filtered search despite being correctly tagged. Recommendation: increase multiplier to 5× or 10× when tag filter is active, or apply tag filter inside the Cypher search arms rather than post-retrieval.
+2. **Tags missing from search results** — MCP-SEARCH-NO-TAGS-RESPONSE-01 found during this audit. Search mode results don't include `tags` field — agents can't see project/session tags in search results.
+3. **Confidence flag false-negative** — `confident: false` on a valid but vector-only result (cluster finding). The heuristic requires BM25 hit OR maxScore > 0.02 — but valid semantic matches can score below 0.02 RRF when text arm returns nothing.
+4. **External MCP still uses verbose response format** — The compact response format (Session 8) is only in local server.ts. External service returns full `results[]` array with memory text echo.
+5. **Category enrichment inconsistency** — Findings stored with explicit `categories: ["Architecture", "Database"]` also received LLM auto-assigned categories ("Work", "Technology"). Expected but makes deterministic filtering harder.

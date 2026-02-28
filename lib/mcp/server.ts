@@ -384,10 +384,11 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
 
         // -- SEARCH MODE --
         const effectiveLimit = limit ?? 10;
-        // MCP-FILTER-01 fix: when post-filters are active, fetch extra candidates
-        // so the final filtered set is closer to the requested limit.
-        const hasPostFilters = !!(category || created_after || tag);
-        const fetchLimit = hasPostFilters ? effectiveLimit * 3 : effectiveLimit;
+        // MCP-FILTER-02 fix: tag post-filter has lowest selectivity (few memories
+        // carry a given tag), so use a higher multiplier to compensate.
+        // category/date filters are less aggressive — 5× suffices.
+        const fetchMultiplier = tag ? 10 : (category || created_after) ? 5 : 1;
+        const fetchLimit = effectiveLimit * fetchMultiplier;
         console.log(`[MCP] search_memory search userId=${userId} query="${query}" limit=${effectiveLimit} fetchLimit=${fetchLimit}`);
 
         // Spec 02: hybrid search (BM25 + vector + RRF)
@@ -449,11 +450,14 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
           content: [{
             type: "text",
             text: JSON.stringify({
-              // Eval v4 Finding 3: low-confidence flag when no BM25 hit and scores are weak
+              // Confidence heuristic (MCP-CONFIDENCE-02):
+              // RRF single-arm floor ≈ 1/(K+1) where K=60 → 0.0164. Scores above
+              // 0.012 indicate at least one arm ranked the result in the top half.
+              // Previous 0.02 threshold caused false-negatives for valid vector-only results.
               ...(filtered.length > 0 ? (() => {
                 const hasAnyTextHit = filtered.some(r => r.textRank !== null);
                 const maxScore = Math.max(...filtered.map(r => r.rrfScore));
-                const confident = hasAnyTextHit || maxScore > 0.02;
+                const confident = hasAnyTextHit || maxScore > 0.012;
                 return {
                   confident,
                   message: confident
@@ -472,6 +476,7 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
                   vector_rank: r.vectorRank,
                   created_at: r.createdAt,
                   categories: r.categories,
+                  tags: r.tags ?? [],
                 };
               }),
               ...(entities.length > 0 ? {

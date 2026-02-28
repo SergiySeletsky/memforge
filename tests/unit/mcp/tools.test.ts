@@ -392,7 +392,7 @@ describe("MCP Tool Handlers — search_memory", () => {
     mockHybridSearch.mockResolvedValueOnce([
       {
         id: "m1", content: "Alice uses TypeScript", rrfScore: 0.05,
-        textRank: 1, vectorRank: 2, createdAt: "2026-01-15", categories: ["tech"],
+        textRank: 1, vectorRank: 2, createdAt: "2026-01-15", categories: ["tech"], tags: ["session-1"],
       },
     ] as any);
     mockRunWrite.mockResolvedValueOnce([]); // access log
@@ -411,6 +411,7 @@ describe("MCP Tool Handlers — search_memory", () => {
     expect(parsed.results[0]).toHaveProperty("text_rank", 1);
     expect(parsed.results[0]).toHaveProperty("vector_rank", 2);
     expect(parsed.results[0]).toHaveProperty("categories", ["tech"]);
+    expect(parsed.results[0]).toHaveProperty("tags", ["session-1"]);
   });
 
   it("MCP_SM_02: category filter removes non-matching results", async () => {
@@ -486,10 +487,10 @@ describe("MCP Tool Handlers — search_memory", () => {
   });
 
   it("MCP_SM_06: includes confident:false when all text_rank null and low scores", async () => {
-    // Simulate irrelevant query — vector-only results with low RRF scores
+    // Simulate irrelevant query — vector-only results with scores below 0.012 threshold
     mockHybridSearch.mockResolvedValueOnce([
-      { id: "m1", content: "Unrelated A", rrfScore: 0.015, textRank: null, vectorRank: 5, createdAt: "2026-01-15", categories: [] },
-      { id: "m2", content: "Unrelated B", rrfScore: 0.012, textRank: null, vectorRank: 8, createdAt: "2026-01-14", categories: [] },
+      { id: "m1", content: "Unrelated A", rrfScore: 0.010, textRank: null, vectorRank: 5, createdAt: "2026-01-15", categories: [] },
+      { id: "m2", content: "Unrelated B", rrfScore: 0.008, textRank: null, vectorRank: 8, createdAt: "2026-01-14", categories: [] },
     ] as any);
     mockRunWrite.mockResolvedValueOnce([]);
 
@@ -505,7 +506,7 @@ describe("MCP Tool Handlers — search_memory", () => {
   });
 
   it("MCP_SM_07: confident:true when no text_rank but high RRF scores", async () => {
-    // Vector-only match but with high score (above 0.02 threshold)
+    // Vector-only match but with high score (above 0.012 confidence threshold)
     mockHybridSearch.mockResolvedValueOnce([
       { id: "m1", content: "Semantically close", rrfScore: 0.03, textRank: null, vectorRank: 1, createdAt: "2026-01-15", categories: [] },
     ] as any);
@@ -535,8 +536,8 @@ describe("MCP Tool Handlers — search_memory", () => {
     expect(parsed.results).toHaveLength(0);
   });
 
-  it("MCP_FILTER_FETCH_01: fetches 3× limit candidates when category filter active (MCP-FILTER-01)", async () => {
-    // With limit=5 and a category filter, hybridSearch topK must be 15 (5 × 3)
+  it("MCP_FILTER_FETCH_01: fetches 5× limit candidates when category filter active (MCP-FILTER-02)", async () => {
+    // With limit=5 and a category filter, hybridSearch topK must be 25 (5 × 5)
     mockHybridSearch.mockResolvedValueOnce([]);
     mockRunWrite.mockResolvedValueOnce([]);
 
@@ -547,11 +548,11 @@ describe("MCP Tool Handlers — search_memory", () => {
 
     expect(mockHybridSearch).toHaveBeenCalledWith(
       "find me something",
-      expect.objectContaining({ topK: 15 })
+      expect.objectContaining({ topK: 25 })
     );
   });
 
-  it("MCP_FILTER_FETCH_02: fetches 3× limit candidates when tag filter active (MCP-FILTER-01)", async () => {
+  it("MCP_FILTER_FETCH_02: fetches 10× limit candidates when tag filter active (MCP-FILTER-02)", async () => {
     mockHybridSearch.mockResolvedValueOnce([]);
     mockRunWrite.mockResolvedValueOnce([]);
 
@@ -562,11 +563,11 @@ describe("MCP Tool Handlers — search_memory", () => {
 
     expect(mockHybridSearch).toHaveBeenCalledWith(
       "tagged query",
-      expect.objectContaining({ topK: 12 })
+      expect.objectContaining({ topK: 40 })
     );
   });
 
-  it("MCP_FILTER_FETCH_03: uses exact limit as topK when no post-filters active (MCP-FILTER-01)", async () => {
+  it("MCP_FILTER_FETCH_03: uses exact limit as topK when no post-filters active (MCP-FILTER-02)", async () => {
     // Without filters, fetchLimit === effectiveLimit (no 3× overhead)
     mockHybridSearch.mockResolvedValueOnce([]);
     mockRunWrite.mockResolvedValueOnce([]);
