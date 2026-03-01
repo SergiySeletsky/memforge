@@ -5,7 +5,18 @@
  * Top-level keys: "memforge" and "memforge_ext".
  */
 import { runRead, runWrite } from "@/lib/db/memgraph";
+// ---------------------------------------------------------------------------
+// TTL cache for config reads — avoids Memgraph round-trip on every addMemory
+// ---------------------------------------------------------------------------
 
+const CONFIG_TTL_MS = 30_000; // 30 seconds
+
+let _configCache: { config: AppConfig; expiresAt: number } | null = null;
+
+/** Invalidate the config cache (call after writes). */
+export function invalidateConfigCache(): void {
+  _configCache = null;
+}
 export function getDefaultConfiguration() {
   return {
     memforge: {} as {
@@ -22,8 +33,12 @@ export function getDefaultConfiguration() {
 
 export type AppConfig = ReturnType<typeof getDefaultConfiguration>;
 
-/** Read full config from Memgraph, merging with defaults. */
+/** Read full config from Memgraph, merging with defaults. TTL-cached for 30s. */
 export async function getConfigFromDb(): Promise<AppConfig> {
+  // CONFIG-NO-TTL-CACHE fix: return cached value when fresh
+  if (_configCache && Date.now() < _configCache.expiresAt) {
+    return _configCache.config;
+  }
   try {
     const rows = await runRead<{ key: string; value: string }>(
       `MATCH (c:Config) RETURN c.key AS key, c.value AS value`,
@@ -38,10 +53,12 @@ export async function getConfigFromDb(): Promise<AppConfig> {
       }
     }
     const defaults = getDefaultConfiguration();
-    return {
+    const config = {
       memforge: (result.memforge as AppConfig["memforge"]) ?? defaults.memforge,
       memforge_ext: (result.memforge_ext as AppConfig["memforge_ext"]) ?? defaults.memforge_ext,
     };
+    _configCache = { config, expiresAt: Date.now() + CONFIG_TTL_MS };
+    return config;
   } catch {
     return getDefaultConfiguration();
   }
@@ -55,6 +72,8 @@ export async function saveConfigToDb(config: AppConfig): Promise<AppConfig> {
       { key, value: JSON.stringify(value) }
     );
   }
+  // Invalidate TTL cache after write so next read picks up fresh data
+  invalidateConfigCache();
   return config;
 }
 

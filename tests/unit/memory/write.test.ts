@@ -203,13 +203,14 @@ describe("supersedeMemory", () => {
     expect(atomicCall).toContain("User {userId: $userId}");
   });
 
-  test("WR_31: attaches new Memory to App when provided (second call)", async () => {
+  test("WR_31: attaches new Memory to App when provided (inline in same query)", async () => {
     await supersedeMemory("old-id", "new", "u1", "vscode");
-    // 2 calls: atomic (steps 1-3) + App attachment
-    expect(mockRunWrite.mock.calls.length).toBe(2);
-    const appCall = mockRunWrite.mock.calls[1][0] as string;
-    expect(appCall).toContain(":App");
-    expect(appCall).toContain("CREATED_BY");
+    // WRITE-SUPERSEDE-NOT-ATOMIC fix: all steps in 1 call (was 2)
+    expect(mockRunWrite.mock.calls.length).toBe(1);
+    const atomicCall = mockRunWrite.mock.calls[0][0] as string;
+    expect(atomicCall).toContain(":App");
+    expect(atomicCall).toContain("CREATED_BY");
+    expect(atomicCall).toContain("SUPERSEDES");
   });
 
   test("WR_32: fires categorize on new memory", async () => {
@@ -299,6 +300,15 @@ describe("archiveMemory", () => {
     const cypher = mockRunWrite.mock.calls[0][0] as string;
     expect(cypher).toContain("state = 'archived'");
     expect(cypher).toContain("state = 'active'");
+  });
+
+  test("WR_53: archiveMemory sets invalidAt for bi-temporal exclusion", async () => {
+    mockRunWrite.mockResolvedValue([{ id: "mem-1" }]);
+    await archiveMemory("mem-1", "u1");
+    const cypher = mockRunWrite.mock.calls[0][0] as string;
+    expect(cypher).toContain("invalidAt");
+    // Verify the SET clause contains invalidAt assignment
+    expect(cypher).toMatch(/SET[\s\S]*invalidAt[\s\S]*=[\s\S]*\$now/);
   });
 
   test("WR_51: returns false when not found or not active", async () => {

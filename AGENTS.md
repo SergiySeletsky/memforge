@@ -22,6 +22,7 @@
 | 14 (second) â€” Lint Analysis | 100+ lint warnings | Resolved import/type issues; no new patterns |
 | 15 â€” Frontend + API Audit | 22 new findings; 8 HIGH (frontend) | Stale closure, namespace violation, N+1 categorize documented in AUDIT_REPORT_SESSION15.md |
 | 13 â€" Graphiti-Inspired Enhancements | P0â€"P3: temporal edges, entity summaries, fast-path dedup, context injection | Bi-temporal edges + contradiction LLM, entity profile gen, fast-path normalized dedup, previous-memory context for extraction. 46 suites / 418 tests. |
+| 14 â€" Agentic Architect Audit (MCP LTM) | Full repo audit across 8 code layers using MCP as LTM | 24 findings stored (20 ADD, 4 SUPERSEDE); 6 MCP recovery tests; MCP tool evaluation report below. |
 
 **Test baseline after completed sessions:** 418 tests, 46 suites, 0 failures
 
@@ -968,3 +969,186 @@ Implement 4 Graphiti-inspired enhancements to the entity extraction and relation
 ### Test Results
 - **`tsc --noEmit`: 0 errors**
 - **`jest --runInBand --no-coverage`: 46 suites / 418 tests — 0 failures** (up from 45/398)
+
+---
+
+## Session 14 — Agentic Architect Audit (MCP LTM Stress Test)
+
+### Objective
+Full read-only codebase audit across 8 layers (DB, write pipeline, search, entity, MCP server, API routes, frontend, config/infra) using MemForge MCP as long-term memory. Designed to test MCP tools in a realistic agentic workflow where findings exceed a single LLM context window.
+
+### MCP Tool Usage Statistics
+
+| # | Tool | Mode | Query/Content | Purpose | Result |
+|---|------|------|---------------|---------|--------|
+| 1 | search_memory | browse (tag: audit-session-14) | — | Cold-start: session-tagged count | 0 results (fresh tag) |
+| 2 | search_memory | browse (no tag, limit:3) | — | Total inventory | 59 total memories |
+| 3 | add_memories | batch (4) | DB + Write findings | Store Layer 1-2 findings | 3 ADD, 1 SUPERSEDE |
+| 4 | add_memories | batch (4) | Search + Entity findings | Store Layer 3-4 findings | 4 ADD |
+| 5 | add_memories | batch (4) | Security + API findings | Store Layer 6 findings | 4 ADD |
+| 6 | add_memories | batch (4) | Frontend + Config findings | Store Layer 7-8 findings | 3 ADD, 1 SUPERSEDE |
+| 7 | add_memories | batch (4) | MCP + Entity layer findings | Store Layer 5 findings | 4 ADD |
+| 8 | add_memories | batch (4) | Additional + refactoring findings | Store cross-cutting findings | 2 ADD, 2 SUPERSEDE |
+| 9 | search_memory | browse (tag: audit-session-14) | — | Full inventory check | 24 results (100% recall) |
+| 10 | search_memory | search + tag | "security vulnerabilities cross-user..." | Recovery Test 1: security | 10/24, both HIGH-SEC in top 3 |
+| 11 | search_memory | search + tag | "performance bottlenecks N+1 queries..." | Recovery Test 2: perf | 8/24, N+1 ranked #1-#2 |
+| 12 | search_memory | search (no tag) | "high severity bugs that need immediate fix" | Recovery Test 3: cross-session | 5 results across sessions 7,8,9,14 |
+| 13 | search_memory | search + tag | "write pipeline atomicity supersedeMemory..." | Recovery Test 4: domain-specific | 7/24, ranked #1 (0.92) |
+| 14 | search_memory | browse (tag: mem0ai/mem0) | — | Recovery Test 5: project-scoped | 35 total across sessions |
+| **Totals** | **6 add / 8 search** | | **24 items sent** | | **20 stored, 4 superseded** |
+
+### Findings Stored (24 total, 20 new + 4 superseded prior findings)
+
+| ID | Severity | Layer | Status |
+|----|----------|-------|--------|
+| DB-CLOSE-NO-SIGTERM-01 | LOW | DB | NEW |
+| DB-VECTOR-FLAG-HMR-01 | LOW | DB | NEW |
+| WRITE-SUPERSEDE-NOT-ATOMIC-01 | MEDIUM | Write | SUPERSEDED prior |
+| WRITE-ARCHIVE-NO-INVALIDAT-01 | MEDIUM | Write | NEW |
+| SEARCH-HYDRATE-NO-BITEMPORAL-01 | MEDIUM | Search | NEW |
+| SEARCH-PAGINATION-LOSSY-01 | MEDIUM | Search | NEW |
+| ENTITY-ENRICH-N-PLUS-1-01 | MEDIUM-PERF | Entity | NEW |
+| ENTITY-WORKER-STEP1-NO-ANCHOR-01 | LOW-SECURITY | Entity | NEW |
+| API-APPS-NO-USER-ANCHOR-01 | HIGH-SECURITY | API | NEW |
+| API-APPS-PUT-NO-AUTH-01 | HIGH-SECURITY | API | NEW |
+| API-BACKUP-OOM-01 | MEDIUM | API | NEW |
+| API-FILTER-FULLSCAN-01 | MEDIUM-PERF | API | NEW |
+| FRONTEND-STALE-CLOSURE-01 | MEDIUM | Frontend | NEW |
+| FRONTEND-OPTIMISTIC-DELETE-01 | MEDIUM-UX | Frontend | NEW |
+| CONFIG-NO-TTL-CACHE-01 | MEDIUM-PERF | Config | SUPERSEDED prior |
+| CLUSTER-SEQUENTIAL-WRITES-01 | LOW-PERF | Clusters | NEW |
+| MCP-SUPERSEDE-TAG-DEAD-CODE-01 | LOW | MCP | NEW |
+| ENTITY-SUMMARIZE-NO-USER-ANCHOR-01 | LOW | Entity | NEW |
+| EXTRACT-NO-CODE-FENCE-STRIP-01 | LOW | Entity | NEW |
+| MIDDLEWARE-NOT-ADOPTED-01 | LOW | Infra | NEW |
+| RESOLVE-REDUNDANT-USER-MERGE-01 | LOW-PERF | Entity | SUPERSEDED prior |
+| WRITE-SUPERSEDE-NO-ENTITY-EXTRACT-01 | HIGH | Write | SUPERSEDED prior |
+| FILTER-DOUBLE-QUERY-01 | LOW-PERF | API | NEW |
+| BACKUP-EXPORT-EMBEDDING-01 | LOW | API | NEW |
+
+### MCP Tool Scenario Evaluation
+
+| Scenario | Calls | Usefulness | Verdict |
+|----------|-------|------------|---------|
+| Cold-start inventory (browse) | 2 | 10/10 | ESSENTIAL — prevents duplicate work |
+| Batched write (add_memories) | 6 | 9/10 | RELIABLE — 0 errors, dedup works |
+| Tag-scoped browse (recall) | 1 | 10/10 | GROUND TRUTH — 24/24 recall |
+| Semantic search + tag (recovery) | 3 | 9/10 | STRONG — targeted findings at high relevance |
+| Cross-session query (no tag) | 1 | 10/10 | KEY VALUE — multi-session accumulation |
+| Project-scoped inventory | 1 | 8/10 | USEFUL — per-repo knowledge management |
+
+### What Worked Well
+1. **Dedup across sessions** — 4 findings from prior sessions correctly superseded
+2. **Tag-scoped browse = perfect recall** — 24/24 findings returned
+3. **Semantic search ranking** — HIGH-SECURITY findings in top 3 for security queries
+4. **Cross-session accumulation** — 35 project-scoped findings across 4 sessions
+5. **Compact response format** — `{ids, stored, superseded}` saves context tokens
+6. **Batch writes zero errors** — 6 × 4 items = 24 items, no failures
+7. **Dual-arm RRF** — BM25 + vector hits scored highest relevance
+
+### What Can Be Improved
+1. **SUPERSEDE across sessions loses context**: cross-session dedup can consume prior session's version. Need `dedup: false` or `dedup_scope: "session"` option.
+2. **Category enrichment adds noise**: LLM auto-assigns "Technology", "Work" alongside explicit "Security", "API". Need option to suppress auto-categorization when explicit categories provided.
+3. **No `superseded_ids` in response**: when dedup supersedes findings, caller can't see which prior items were consumed. Add to response.
+4. **Entity enrichment latency on search**: every search enriches with entities (5 DB trips). For audit recall, `include_entities: false` should be default.
+5. **Browse + search mutually exclusive**: need both "all items tagged X" (completeness) AND "ranked by relevance" (precision) in one query.
+6. **Low `confident` threshold for tag-filtered search**: tag post-filter removes results after RRF scoring, which can cause `confident: false` on valid vector-only results that survive the tag filter.
+
+### Test Baseline (unchanged — read-only audit)
+- **46 suites / 418 tests — ALL PASS**
+
+---
+
+## Session 15 — Audit Findings Implementation (P0–P2)
+
+### Objective
+Implement 7 high-priority fixes from Session 14 audit findings, with test coverage.
+
+### Fixes Applied
+
+| ID | Severity | File | Fix |
+|----|----------|------|-----|
+| API-APPS-NO-USER-ANCHOR-01 | HIGH-SECURITY | app/api/v1/apps/[appId]/route.ts | GET now requires `user_id` and anchors App lookup through `(u:User)-[:HAS_APP]->(a:App)` instead of bare `(a:App)` |
+| API-APPS-PUT-NO-AUTH-01 | HIGH-SECURITY | app/api/v1/apps/[appId]/route.ts | PUT now requires `user_id` and anchors update through `(u:User)-[:HAS_APP]->(a:App)` |
+| SEARCH-HYDRATE-NO-BITEMPORAL-01 | MEDIUM | lib/search/hybrid.ts | Added `WHERE m.invalidAt IS NULL` to hydration UNWIND query — defense-in-depth against invalidated memories leaking into results |
+| WRITE-SUPERSEDE-NOT-ATOMIC-01 | MEDIUM | lib/memory/write.ts | Merged App attachment into the same Cypher query as invalidate+create+link — `supersedeMemory()` now uses 1 `runWrite` call (was 2) with inline `MERGE App + CREATED_BY` |
+| WRITE-ARCHIVE-NO-INVALIDAT-01 | MEDIUM | lib/memory/write.ts | `archiveMemory()` now sets `m.invalidAt = $now` — archived memories correctly excluded from bi-temporal queries (`WHERE m.invalidAt IS NULL`) |
+| ENTITY-ENRICH-N-PLUS-1-01 | MEDIUM-PERF | lib/mcp/entities.ts | Replaced per-entity for-loop relationship fetch with single UNWIND batch query — 1 DB round-trip instead of N |
+| CONFIG-NO-TTL-CACHE-01 | MEDIUM-PERF | lib/config/helpers.ts | Added 30s TTL cache for `getConfigFromDb()` — `getDedupConfig()` and `getContextWindowConfig()` no longer hit Memgraph on every `addMemory()` call. `saveConfigToDb()` invalidates cache. Exported `invalidateConfigCache()` for tests. |
+
+### Tests Added/Updated
+
+| File | Change | Tests |
+|------|--------|-------|
+| tests/unit/routes/apps-security.test.ts | NEW | APPS_SEC_01–04: GET/PUT require user_id, anchor through User |
+| tests/unit/config/config-cache.test.ts | NEW | CONFIG_TTL_01–04: TTL cache hit/miss, save invalidation, manual invalidation |
+| tests/unit/mcp/entities.test.ts | UPDATED | ENTITY_SEARCH_01–07,11: relationship mocks updated for UNWIND batch; added ENTITY_SEARCH_11 (verifies single UNWIND for N entities) |
+| tests/unit/memory/write.test.ts | UPDATED | WR_31: updated for 1-call supersede (was 2); Added WR_53: archiveMemory sets invalidAt |
+| tests/unit/config/dedup-config.test.ts | UPDATED | Added `invalidateConfigCache()` to beforeEach for TTL cache compatibility |
+
+### Files Modified (7 source + 5 test)
+
+**Source:**
+1. `app/api/v1/apps/[appId]/route.ts` — User anchor + user_id required
+2. `lib/search/hybrid.ts` — invalidAt IS NULL in hydration
+3. `lib/memory/write.ts` — atomic supersede, archive invalidAt
+4. `lib/mcp/entities.ts` — UNWIND batch relationships
+5. `lib/config/helpers.ts` — TTL cache + invalidation
+
+**Tests:**
+1. `tests/unit/routes/apps-security.test.ts` (new, 4 tests)
+2. `tests/unit/config/config-cache.test.ts` (new, 4 tests)
+3. `tests/unit/mcp/entities.test.ts` (updated, +1 new test)
+4. `tests/unit/memory/write.test.ts` (updated, +1 new test)
+5. `tests/unit/config/dedup-config.test.ts` (updated for cache compat)
+
+### Verification
+- `tsc --noEmit`: **0 errors**
+- `jest --runInBand --no-coverage`: **48 suites / 428 tests — 0 failures** (up from 46/418)
+
+## Session 15 — Audit Findings Implementation (P0–P2)
+
+### Objective
+Implement 7 high-priority fixes from Session 14 audit findings, with test coverage.
+
+### Fixes Applied
+
+| ID | Severity | File | Fix |
+|----|----------|------|-----|
+| API-APPS-NO-USER-ANCHOR-01 | HIGH-SECURITY | app/api/v1/apps/[appId]/route.ts | GET now requires `user_id` and anchors App lookup through `(u:User)-[:HAS_APP]->(a:App)` instead of bare `(a:App)` |
+| API-APPS-PUT-NO-AUTH-01 | HIGH-SECURITY | app/api/v1/apps/[appId]/route.ts | PUT now requires `user_id` and anchors update through `(u:User)-[:HAS_APP]->(a:App)` |
+| SEARCH-HYDRATE-NO-BITEMPORAL-01 | MEDIUM | lib/search/hybrid.ts | Added `WHERE m.invalidAt IS NULL` to hydration UNWIND query — defense-in-depth against invalidated memories leaking into results |
+| WRITE-SUPERSEDE-NOT-ATOMIC-01 | MEDIUM | lib/memory/write.ts | Merged App attachment into the same Cypher query as invalidate+create+link — `supersedeMemory()` now uses 1 `runWrite` call (was 2) with inline `MERGE App + CREATED_BY` |
+| WRITE-ARCHIVE-NO-INVALIDAT-01 | MEDIUM | lib/memory/write.ts | `archiveMemory()` now sets `m.invalidAt = $now` — archived memories correctly excluded from bi-temporal queries (`WHERE m.invalidAt IS NULL`) |
+| ENTITY-ENRICH-N-PLUS-1-01 | MEDIUM-PERF | lib/mcp/entities.ts | Replaced per-entity for-loop relationship fetch with single UNWIND batch query — 1 DB round-trip instead of N |
+| CONFIG-NO-TTL-CACHE-01 | MEDIUM-PERF | lib/config/helpers.ts | Added 30s TTL cache for `getConfigFromDb()` — `getDedupConfig()` and `getContextWindowConfig()` no longer hit Memgraph on every `addMemory()` call. `saveConfigToDb()` invalidates cache. Exported `invalidateConfigCache()` for tests. |
+
+### Tests Added/Updated
+
+| File | Change | Tests |
+|------|--------|-------|
+| tests/unit/routes/apps-security.test.ts | NEW | APPS_SEC_01–04: GET/PUT require user_id, anchor through User |
+| tests/unit/config/config-cache.test.ts | NEW | CONFIG_TTL_01–04: TTL cache hit/miss, save invalidation, manual invalidation |
+| tests/unit/mcp/entities.test.ts | UPDATED | ENTITY_SEARCH_01–07,11: relationship mocks updated for UNWIND batch; added ENTITY_SEARCH_11 (verifies single UNWIND for N entities) |
+| tests/unit/memory/write.test.ts | UPDATED | WR_31: updated for 1-call supersede (was 2); Added WR_53: archiveMemory sets invalidAt |
+| tests/unit/config/dedup-config.test.ts | UPDATED | Added `invalidateConfigCache()` to beforeEach for TTL cache compatibility |
+
+### Files Modified (7 source + 5 test)
+
+**Source:**
+1. `app/api/v1/apps/[appId]/route.ts` — User anchor + user_id required
+2. `lib/search/hybrid.ts` — invalidAt IS NULL in hydration
+3. `lib/memory/write.ts` — atomic supersede, archive invalidAt
+4. `lib/mcp/entities.ts` — UNWIND batch relationships
+5. `lib/config/helpers.ts` — TTL cache + invalidation
+
+**Tests:**
+1. `tests/unit/routes/apps-security.test.ts` (new, 4 tests)
+2. `tests/unit/config/config-cache.test.ts` (new, 4 tests)
+3. `tests/unit/mcp/entities.test.ts` (updated, +1 new test)
+4. `tests/unit/memory/write.test.ts` (updated, +1 new test)
+5. `tests/unit/config/dedup-config.test.ts` (updated for cache compat)
+
+### Verification
+- `tsc --noEmit`: **0 errors**
+- `jest --runInBand --no-coverage`: **48 suites / 428 tests — 0 failures** (up from 46/418)

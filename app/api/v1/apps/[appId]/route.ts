@@ -5,13 +5,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   const { appId } = await params;
   const url = new URL(request.url);
   const userId = url.searchParams.get("user_id");
+  if (!userId) return NextResponse.json({ detail: "user_id required" }, { status: 400 });
   const rows = await runRead<{ name: string; id: string; is_active: boolean; created_at: string; memory_count: number }>(
-    `MATCH (a:App) WHERE a.appName = $appId OR a.id = $appId
-     OPTIONAL MATCH (:User {userId: $userId})-[:HAS_MEMORY]->(m:Memory)-[:CREATED_BY]->(a)
-     WHERE m IS NULL OR (m.state = 'active' AND m.invalidAt IS NULL)
+    `MATCH (u:User {userId: $userId})-[:HAS_APP]->(a:App)
+     WHERE a.appName = $appId OR a.id = $appId
+     OPTIONAL MATCH (u)-[:HAS_MEMORY]->(m:Memory)-[:CREATED_BY]->(a)
+     WHERE m.state = 'active' AND m.invalidAt IS NULL
      RETURN a.appName AS name, a.id AS id, a.isActive AS is_active,
             a.createdAt AS created_at, count(m) AS memory_count`,
-    { appId, userId: userId || "" }
+    { appId, userId }
   );
   if (!rows.length) return NextResponse.json({ detail: "App not found" }, { status: 404 });
   const r = rows[0];
@@ -29,9 +31,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   const { appId } = await params;
+  const url = new URL(request.url);
+  const userId = url.searchParams.get("user_id");
+  if (!userId) return NextResponse.json({ detail: "user_id required" }, { status: 400 });
   const body = await request.json();
   if (typeof body.is_active !== "boolean")
     return NextResponse.json({ detail: "Nothing to update" }, { status: 400 });
-  await runWrite(`MATCH (a:App {appName: $appId}) SET a.isActive = $isActive`, { appId, isActive: body.is_active });
+  await runWrite(
+    `MATCH (u:User {userId: $userId})-[:HAS_APP]->(a:App {appName: $appId})
+     SET a.isActive = $isActive`,
+    { userId, appId, isActive: body.is_active }
+  );
   return NextResponse.json({ message: "App updated" });
 }

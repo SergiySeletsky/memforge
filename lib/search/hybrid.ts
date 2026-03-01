@@ -85,9 +85,11 @@ export async function hybridSearch(
   if (ids.length === 0) return [];
 
   // Hydrate all result nodes in one Cypher round-trip
+  // SEARCH-HYDRATE-NO-BITEMPORAL fix: guard with invalidAt IS NULL
   const rows = await runRead(
     `UNWIND $ids AS memId
      MATCH (u:User {userId: $userId})-[:HAS_MEMORY]->(m:Memory {id: memId})
+     WHERE m.invalidAt IS NULL
      OPTIONAL MATCH (m)-[:CREATED_BY]->(a:App)
      OPTIONAL MATCH (m)-[:HAS_CATEGORY]->(c:Category)
      RETURN m.id AS id, m.content AS content, m.createdAt AS createdAt,

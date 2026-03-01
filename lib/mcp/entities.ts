@@ -130,37 +130,52 @@ export async function searchEntities(
     }
   }
 
-  // Enrich each entity with its explicit RELATED_TO relationships
-  const results: EntityProfile[] = [];
-  for (const entity of merged.slice(0, effectiveLimit)) {
-    const relRows = await runRead<{
-      sourceName: string;
-      relType: string;
-      targetName: string;
-      description: string | null;
-    }>(
-      `MATCH (u:User {userId: $userId})-[:HAS_ENTITY]->(center:Entity {id: $entityId})
-       MATCH (center)-[r:RELATED_TO]->(tgt:Entity)<-[:HAS_ENTITY]-(u)
-       RETURN center.name AS sourceName, r.relType AS relType,
-              tgt.name AS targetName, r.description AS description
-       UNION ALL
-       MATCH (u:User {userId: $userId})-[:HAS_ENTITY]->(center:Entity {id: $entityId})
-       MATCH (u)-[:HAS_ENTITY]->(src:Entity)-[r:RELATED_TO]->(center)
-       RETURN src.name AS sourceName, r.relType AS relType,
-              center.name AS targetName, r.description AS description`,
-      { userId, entityId: entity.id },
-    );
+  // ENTITY-ENRICH-N+1 fix: Single UNWIND query replaces per-entity for-loop
+  const entityIds = merged.slice(0, effectiveLimit).map((e) => e.id);
+  const relRows = entityIds.length > 0
+    ? await runRead<{
+        entityId: string;
+        sourceName: string;
+        relType: string;
+        targetName: string;
+        description: string | null;
+      }>(
+        `UNWIND $entityIds AS eid
+         MATCH (u:User {userId: $userId})-[:HAS_ENTITY]->(center:Entity {id: eid})
+         OPTIONAL MATCH (center)-[r:RELATED_TO]->(tgt:Entity)<-[:HAS_ENTITY]-(u)
+         WITH center, r, tgt, eid
+         WHERE r IS NOT NULL
+         RETURN eid AS entityId, center.name AS sourceName, r.relType AS relType,
+                tgt.name AS targetName, r.description AS description
+         UNION ALL
+         UNWIND $entityIds AS eid
+         MATCH (u:User {userId: $userId})-[:HAS_ENTITY]->(center:Entity {id: eid})
+         OPTIONAL MATCH (u)-[:HAS_ENTITY]->(src:Entity)-[r:RELATED_TO]->(center)
+         WITH center, src, r, eid
+         WHERE r IS NOT NULL
+         RETURN eid AS entityId, src.name AS sourceName, r.relType AS relType,
+                center.name AS targetName, r.description AS description`,
+        { userId, entityIds },
+      )
+    : [];
 
-    results.push({
-      ...entity,
-      relationships: relRows.map((r) => ({
-        source: r.sourceName,
-        type: r.relType,
-        target: r.targetName,
-        description: r.description,
-      })),
+  // Group relationships by entity ID
+  const relMap = new Map<string, EntityProfile["relationships"]>();
+  for (const r of relRows) {
+    const list = relMap.get(r.entityId) ?? [];
+    list.push({
+      source: r.sourceName,
+      type: r.relType,
+      target: r.targetName,
+      description: r.description,
     });
+    relMap.set(r.entityId, list);
   }
+
+  const results: EntityProfile[] = merged.slice(0, effectiveLimit).map((entity) => ({
+    ...entity,
+    relationships: relMap.get(entity.id) ?? [],
+  }));
 
   return results;
 }

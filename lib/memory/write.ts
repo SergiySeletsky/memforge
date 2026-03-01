@@ -198,9 +198,9 @@ export async function supersedeMemory(
     effectiveTags = oldRows[0]?.tags ?? [];
   }
 
-  // Steps 1-3 combined: invalidate old, create new, link to user, create SUPERSEDES edge.
-  // Anchored to User (Spec 09 — namespace isolation): both old and new Memory
-  // nodes are reached through the User graph path, preventing cross-user access.
+  // WRITE-SUPERSEDE-NOT-ATOMIC fix: All steps in a single Cypher query.
+  // Invalidate old + create new + HAS_MEMORY + SUPERSEDES + optional App attach.
+  // Anchored to User (Spec 09 — namespace isolation).
   await runWrite(
     `MATCH (u:User {userId: $userId})-[:HAS_MEMORY]->(old:Memory {id: $oldId})
      SET old.invalidAt = $now, old.updatedAt = $now
@@ -218,20 +218,16 @@ export async function supersedeMemory(
      })
      CREATE (u)-[:HAS_MEMORY]->(new)
      CREATE (new)-[:SUPERSEDES {at: $now}]->(old)
+     ${appName ? `WITH u, new
+     MERGE (u)-[:HAS_APP]->(a:App {appName: $appName})
+     ON CREATE SET a.id = $appId, a.createdAt = $now, a.isActive = true
+     MERGE (new)-[:CREATED_BY]->(a)` : ""}
      RETURN new.id AS id`,
-    { userId, oldId, newId, newContent, embedding, now, tags: effectiveTags }
+    {
+      userId, oldId, newId, newContent, embedding, now, tags: effectiveTags,
+      ...(appName ? { appName, appId: randomUUID() } : {}),
+    }
   );
-
-  // Step 4: Attach new Memory to App if provided (optional, separate session)
-  if (appName) {
-    await runWrite(
-      `MATCH (u:User {userId: $userId})-[:HAS_MEMORY]->(m:Memory {id: $newId})
-       MERGE (u)-[:HAS_APP]->(a:App {appName: $appName})
-       ON CREATE SET a.id = $appId, a.createdAt = $now, a.isActive = true
-       MERGE (m)-[:CREATED_BY]->(a)`,
-      { userId, appName, appId: randomUUID(), newId, now }
-    );
-  }
 
   // Async categorization of the new node — fire-and-forget
   categorizeMemory(newId, newContent).catch((e) => console.warn("[categorize]", e));
@@ -279,10 +275,12 @@ export async function archiveMemory(
   userId: string
 ): Promise<boolean> {
   const now = new Date().toISOString();
+  // WRITE-ARCHIVE-NO-INVALIDAT fix: set invalidAt so archived memories are
+  // excluded from bi-temporal queries (WHERE m.invalidAt IS NULL)
   const rows = await runWrite(
     `MATCH (u:User {userId: $userId})-[:HAS_MEMORY]->(m:Memory {id: $id})
      WHERE m.state = 'active'
-     SET m.state = 'archived', m.archivedAt = $now, m.updatedAt = $now
+     SET m.state = 'archived', m.archivedAt = $now, m.invalidAt = $now, m.updatedAt = $now
      RETURN m.id AS id`,
     { userId, id: memoryId, now }
   );

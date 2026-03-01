@@ -83,9 +83,9 @@ describe("searchEntities", () => {
       ])
       // Arm 2: semantic (no embedding vector needed since embed returns value)
       .mockResolvedValueOnce([])
-      // Relationships for entity e1
+      // UNWIND relationships for all entities
       .mockResolvedValueOnce([
-        { sourceName: "Alice", relType: "WORKS_AT", targetName: "Acme", description: null },
+        { entityId: "e1", sourceName: "Alice", relType: "WORKS_AT", targetName: "Acme", description: null },
       ]);
 
     mockEmbed.mockResolvedValueOnce([0.1, 0.2]);
@@ -117,9 +117,7 @@ describe("searchEntities", () => {
         { id: "e1", name: "Alice", type: "PERSON", description: "Engineer", memoryCount: 3 },
         { id: "e2", name: "Bob", type: "PERSON", description: "Manager", memoryCount: 1 },
       ])
-      // Relationships for e1
-      .mockResolvedValueOnce([])
-      // Relationships for e2
+      // UNWIND relationships for [e1, e2]
       .mockResolvedValueOnce([]);
 
     mockEmbed.mockResolvedValueOnce([0.1, 0.2]);
@@ -178,12 +176,9 @@ describe("searchEntities", () => {
     }));
     mockRunRead
       .mockResolvedValueOnce(sixEntities)
-      .mockResolvedValueOnce([]); // semantic arm
+      .mockResolvedValueOnce([]) // semantic arm
+      .mockResolvedValueOnce([]); // UNWIND relationships for 5 entities
     mockEmbed.mockResolvedValueOnce([]);
-    // Relationship calls for each enriched entity (up to limit=5)
-    for (let i = 0; i < 5; i++) {
-      mockRunRead.mockResolvedValueOnce([]);
-    }
 
     const result = await searchEntities("Entity", USER_ID);
 
@@ -201,26 +196,24 @@ describe("searchEntities", () => {
     }));
     mockRunRead
       .mockResolvedValueOnce(threeEntities)
-      .mockResolvedValueOnce([]); // semantic arm
+      .mockResolvedValueOnce([]) // semantic arm
+      .mockResolvedValueOnce([]); // UNWIND relationships for 2 entities
     mockEmbed.mockResolvedValueOnce([]);
-    // Relationship calls for 2 entities
-    mockRunRead.mockResolvedValueOnce([]);
-    mockRunRead.mockResolvedValueOnce([]);
 
     const result = await searchEntities("Entity", USER_ID, { limit: 2 });
 
     expect(result).toHaveLength(2);
   });
 
-  it("ENTITY_SEARCH_07: relationships fetched for each entity and mapped correctly", async () => {
+  it("ENTITY_SEARCH_07: relationships fetched via UNWIND and mapped correctly", async () => {
     mockRunRead
       .mockResolvedValueOnce([
         { id: "e1", name: "Alice", type: "PERSON", description: null, memoryCount: 1 },
       ])
       .mockResolvedValueOnce([]) // semantic
       .mockResolvedValueOnce([
-        { sourceName: "Alice", relType: "MANAGES", targetName: "Team A", description: "Direct reports" },
-        { sourceName: "HR", relType: "OVERSEES", targetName: "Alice", description: null },
+        { entityId: "e1", sourceName: "Alice", relType: "MANAGES", targetName: "Team A", description: "Direct reports" },
+        { entityId: "e1", sourceName: "HR", relType: "OVERSEES", targetName: "Alice", description: null },
       ]);
 
     mockEmbed.mockResolvedValueOnce([]);
@@ -269,6 +262,40 @@ describe("searchEntities", () => {
       const params = call[1] as Record<string, unknown>;
       expect(params.userId).toBe("isolated-user");
     }
+  });
+
+  it("ENTITY_SEARCH_11: UNWIND batch — single relationship query for N entities (not N queries)", async () => {
+    // 3 entities returned from substring arm
+    const threeEntities = [
+      { id: "e1", name: "Alice", type: "PERSON", description: null, memoryCount: 3 },
+      { id: "e2", name: "Bob", type: "PERSON", description: null, memoryCount: 2 },
+      { id: "e3", name: "Carol", type: "PERSON", description: null, memoryCount: 1 },
+    ];
+    mockRunRead
+      .mockResolvedValueOnce(threeEntities) // substring
+      .mockResolvedValueOnce([]) // semantic
+      // Single UNWIND returns rels for multiple entities
+      .mockResolvedValueOnce([
+        { entityId: "e1", sourceName: "Alice", relType: "WORKS_WITH", targetName: "Bob", description: null },
+        { entityId: "e2", sourceName: "Bob", relType: "MANAGES", targetName: "Carol", description: "Direct report" },
+      ]);
+    mockEmbed.mockResolvedValueOnce([]);
+
+    const result = await searchEntities("team", USER_ID);
+
+    // Exactly 3 runRead calls: substring, semantic, 1 UNWIND (not 3 per-entity)
+    expect(mockRunRead).toHaveBeenCalledTimes(3);
+
+    // UNWIND call should pass entityIds array
+    const unwindParams = mockRunRead.mock.calls[2][1] as Record<string, unknown>;
+    expect(unwindParams.entityIds).toEqual(["e1", "e2", "e3"]);
+
+    // Relationships correctly grouped per entity
+    expect(result[0].relationships).toHaveLength(1); // Alice has 1
+    expect(result[0].relationships[0].type).toBe("WORKS_WITH");
+    expect(result[1].relationships).toHaveLength(1); // Bob has 1
+    expect(result[1].relationships[0].type).toBe("MANAGES");
+    expect(result[2].relationships).toHaveLength(0); // Carol has 0
   });
 });
 

@@ -6,7 +6,7 @@
  * DEDUP_CFG_02: Config override from Memgraph is respected
  * DEDUP_CFG_03: Config read failure returns safe defaults (enabled, 0.75)
  */
-import { getDedupConfig } from "@/lib/config/helpers";
+import { getDedupConfig, invalidateConfigCache } from "@/lib/config/helpers";
 
 jest.mock("@/lib/db/memgraph", () => ({
   runRead: jest.fn(),
@@ -16,7 +16,10 @@ import { runRead } from "@/lib/db/memgraph";
 
 const mockRunRead = runRead as jest.MockedFunction<typeof runRead>;
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  invalidateConfigCache(); // clear TTL cache between tests
+});
 
 describe("getDedupConfig", () => {
   it("DEDUP_CFG_01: default threshold is 0.75 (Eval v4 Finding 4)", async () => {
