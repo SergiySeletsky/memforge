@@ -63,7 +63,7 @@ beforeEach(() => {
 // addMemory
 // ==========================================================================
 describe("addMemory", () => {
-  test("WR_01: returns a UUID string", async () => {
+  test("WR_01: returns a UnifiedId string", async () => {
     mockRunWrite.mockResolvedValue([{ id: "returned-id" }]);
     const id = await addMemory("hello world", { userId: "u1" });
     expect(typeof id).toBe("string");

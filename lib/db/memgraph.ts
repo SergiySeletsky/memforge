@@ -391,11 +391,12 @@ export interface UserNode {
  * Returns the node as a plain object { id, userId, createdAt }.
  */
 export async function getOrCreateUserMg(userId: string): Promise<UserNode> {
+  const { generateId } = await import("@/lib/id");
   const rows = await runWrite(
     `MERGE (u:User {userId: $userId})
-     ON CREATE SET u.id = randomUUID(), u.createdAt = toString(datetime())
+     ON CREATE SET u.id = $uid, u.createdAt = toString(datetime())
      RETURN u.userId AS userId, u.id AS id, u.createdAt AS createdAt`,
-    { userId }
+    { userId, uid: generateId() }
   );
   if (!rows.length) throw new Error(`Failed to getOrCreateUser for ${userId}`);
   return rows[0] as unknown as UserNode;

@@ -8,6 +8,7 @@
  * The MemoryHistory index is created by initSchema() in instrumentation.ts.
  */
 import { runRead, runWrite } from "@/lib/db/memgraph";
+import { generateId } from "@/lib/id";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,7 +44,7 @@ export async function addHistory(
 ): Promise<void> {
   await runWrite(
     `CREATE (h:MemoryHistory {
-       id: randomUUID(),
+       id: $historyId,
        memoryId: $memoryId,
        previousValue: $previousValue,
        newValue: $newValue,
@@ -53,6 +54,7 @@ export async function addHistory(
        isDeleted: $isDeleted
      })`,
     {
+      historyId: generateId(),
       memoryId,
       previousValue: previousValue ?? null,
       newValue: newValue ?? null,

@@ -23,7 +23,7 @@
 
 import { runRead, runWrite } from "@/lib/db/memgraph";
 import { summarizeCluster } from "./summarize";
-import { v4 as uuidv4 } from "uuid";
+import { generateId } from "@/lib/id";
 
 interface CommunityMember {
   id: string;
@@ -103,7 +103,7 @@ export async function rebuildClusters(userId: string): Promise<void> {
     if (members.length < MIN_COMMUNITY_SIZE) continue;
 
     // --- Level 0 community ---
-    const l0Id = uuidv4();
+    const l0Id = generateId();
     const { name: l0Name, summary: l0Summary } = await summarizeCluster(
       members.map((m) => m.content)
     );
@@ -127,7 +127,7 @@ export async function rebuildClusters(userId: string): Promise<void> {
       for (const subMembers of subclusters) {
         if (subMembers.length < MIN_COMMUNITY_SIZE) continue;
 
-        const l1Id = uuidv4();
+        const l1Id = generateId();
         const { name: l1Name, summary: l1Summary } = await summarizeCluster(
           subMembers.map((m) => m.content)
         );

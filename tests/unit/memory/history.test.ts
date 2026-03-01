@@ -32,9 +32,9 @@ describe("addHistory", () => {
     await addHistory("mem-1", "old content", "new content", "SUPERSEDE", "2024-01-01T00:00:00Z");
 
     expect(mockRunWrite).toHaveBeenCalledTimes(1);
-    const [query, params] = mockRunWrite.mock.calls[0];
+    const [query, params] = mockRunWrite.mock.calls[0] as [string, Record<string, unknown>];
     expect(query).toContain("MemoryHistory");
-    expect(query).toContain("randomUUID()");
+    expect(query).toContain("$historyId");
     expect(params).toMatchObject({
       memoryId: "mem-1",
       previousValue: "old content",
@@ -43,6 +43,8 @@ describe("addHistory", () => {
       createdAt: "2024-01-01T00:00:00Z",
       isDeleted: 0,
     });
+    expect(typeof params.historyId).toBe("string");
+    expect((params.historyId as string).length).toBe(13);
   });
 
   it("HIST_02: uses default createdAt when not provided", async () => {

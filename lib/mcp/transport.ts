@@ -9,7 +9,7 @@
  */
 import type { Transport, TransportSendOptions } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
-import { v4 as uuidv4 } from "uuid";
+import { generateId } from "@/lib/id";
 
 /**
  * A Transport implementation that sends JSON-RPC messages as SSE events
@@ -32,7 +32,7 @@ export class NextSSETransport implements Transport {
     controller: ReadableStreamDefaultController<Uint8Array>,
     private _messagesEndpoint: string,
   ) {
-    this.sessionId = uuidv4();
+    this.sessionId = generateId();
     this._controller = controller;
   }
 

@@ -12,7 +12,7 @@
  *   - Entity names normalized via lowercase + underscore replacement
  */
 
-import { randomUUID } from "crypto";
+import { generateId } from "@/lib/id";
 import { runRead, runWrite } from "@/lib/db/memgraph";
 import type {
   GraphStore,
@@ -218,7 +218,7 @@ export class MemgraphGraphStore implements GraphStore {
       {
         userId,
         srcNormalized,
-        srcId: randomUUID(),
+        srcId: generateId(),
         srcName,
         srcType: sourceType,
         srcEmb: embedding.source,
@@ -238,7 +238,7 @@ export class MemgraphGraphStore implements GraphStore {
       {
         userId,
         tgtNormalized,
-        tgtId: randomUUID(),
+        tgtId: generateId(),
         tgtName,
         tgtType: targetType,
         tgtEmb: embedding.target,
@@ -248,7 +248,7 @@ export class MemgraphGraphStore implements GraphStore {
 
     // MERGE the dynamic relationship between the two entities
     // Dynamic relationship types require string interpolation in Cypher
-    const relId = randomUUID();
+    const relId = generateId();
     await runWrite(
       `MATCH (u:User {userId: $userId})-[:HAS_ENTITY]->(src:Entity {normalizedName: $srcNormalized, userId: $userId})
        MATCH (u)-[:HAS_ENTITY]->(tgt:Entity {normalizedName: $tgtNormalized, userId: $userId})

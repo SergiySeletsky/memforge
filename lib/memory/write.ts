@@ -14,7 +14,7 @@
  *  7. (async, Spec 04) Entity extraction
  */
 
-import { randomUUID } from "crypto";
+import { generateId } from "@/lib/id";
 import { runWrite, runRead } from "@/lib/db/memgraph";
 import { embed } from "@/lib/embeddings/openai";
 import { getRecentMemories, buildContextPrefix } from "./context";
@@ -65,7 +65,7 @@ export async function addMemory(
   opts: AddMemoryOptions
 ): Promise<string> {
   const { userId, appName, metadata, tags } = opts;
-  const id = randomUUID();
+  const id = generateId();
   const now = new Date().toISOString();
 
   // Spec 05: Context window — enrich embedding with recent user memories
@@ -117,7 +117,7 @@ export async function addMemory(
       metadata: metadata ? JSON.stringify(metadata) : "{}",
       tags: tags ?? [],
       now,
-      ...(appName ? { appName, appId: randomUUID() } : {}),
+      ...(appName ? { appName, appId: generateId() } : {}),
     }
   );
 
@@ -184,7 +184,7 @@ export async function supersedeMemory(
   tags?: string[]
 ): Promise<string> {
   const now = new Date().toISOString();
-  const newId = randomUUID();
+  const newId = generateId();
   const embedding = await embed(newContent);
 
   // Inherit tags from old memory when not explicitly provided (WRITE-04 fix)
@@ -225,7 +225,7 @@ export async function supersedeMemory(
      RETURN new.id AS id`,
     {
       userId, oldId, newId, newContent, embedding, now, tags: effectiveTags,
-      ...(appName ? { appName, appId: randomUUID() } : {}),
+      ...(appName ? { appName, appId: generateId() } : {}),
     }
   );
 

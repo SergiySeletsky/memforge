@@ -23,7 +23,7 @@ import { runRead, runWrite } from "@/lib/db/memgraph";
 import { embed } from "@/lib/embeddings/openai";
 import { getLLMClient } from "@/lib/ai/client";
 import { buildEntityMergePrompt } from "./prompts";
-import { v4 as uuidv4 } from "uuid";
+import { generateId } from "@/lib/id";
 import type { ExtractedEntity } from "./extract";
 
 // ---------------------------------------------------------------------------
@@ -184,7 +184,7 @@ export async function resolveEntity(
   extracted: ExtractedEntity,
   userId: string
 ): Promise<string> {
-  const id = uuidv4();
+  const id = generateId();
   const now = new Date().toISOString();
   const normalizedType = (extracted.type ?? "CONCEPT").toUpperCase();
   const normName = normalizeName(extracted.name);

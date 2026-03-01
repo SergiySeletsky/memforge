@@ -11,7 +11,7 @@
  *   5. Fire-and-forget processEntityExtraction() per new node
  */
 
-import { v4 as uuid } from "uuid";
+import { generateId } from "@/lib/id";
 import { embedBatch } from "@/lib/embeddings/openai";
 import { runWrite } from "@/lib/db/memgraph";
 import { checkDeduplication } from "@/lib/dedup";
@@ -146,7 +146,7 @@ export async function bulkAddMemories(
   }
 
   const memoriesForWrite: MemoryWriteNode[] = toProcess.map((origIdx, i) => ({
-    id: uuid(),
+    id: generateId(),
     content: items[origIdx].text,
     embedding: embeddings[i],
     validAt: items[origIdx].valid_at ?? now,
@@ -161,8 +161,8 @@ export async function bulkAddMemories(
     `MERGE (u:User {userId: $userId}) ON CREATE SET u.createdAt = $userNow
      WITH u
      MERGE (u)-[:HAS_APP]->(a:App {appName: $appName})
-     ON CREATE SET a.id = randomUUID(), a.createdAt = $userNow, a.isActive = true`,
-    { userId, userNow, appName }
+     ON CREATE SET a.id = $appId, a.createdAt = $userNow, a.isActive = true`,
+    { userId, userNow, appName, appId: generateId() }
   );
 
   // â”€â”€ Stage 5: Single UNWIND + CREATE transaction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
