@@ -85,9 +85,9 @@ describe("processEntityExtraction", () => {
     expect(mockResolve).toHaveBeenCalledTimes(2);
     expect(mockLink).toHaveBeenCalledTimes(2);
 
-    // Relationship extraction: linkEntities called with resolved IDs + entity names
+    // Relationship extraction: linkEntities called with resolved IDs + entity names + metadata
     expect(mockLinkEntities).toHaveBeenCalledWith(
-      "entity-alice", "entity-acme", "WORKS_AT", "Alice works at Acme Corp", "Alice", "Acme Corp"
+      "entity-alice", "entity-acme", "WORKS_AT", "Alice works at Acme Corp", "Alice", "Acme Corp", undefined
     );
 
     // Final SET extractionStatus = 'done'
@@ -218,10 +218,10 @@ describe("processEntityExtraction", () => {
 
     await processEntityExtraction("mem-rel-01");
 
-    // Only valid pair → 1 linkEntities call (now with entity names)
+    // Only valid pair → 1 linkEntities call (now with entity names + metadata)
     expect(mockLinkEntities).toHaveBeenCalledTimes(1);
     expect(mockLinkEntities).toHaveBeenCalledWith(
-      "ent-pg", "ent-auth", "STORES_DATA_FOR", "Postgres holds user data for AuthService", "Postgres", "AuthService"
+      "ent-pg", "ent-auth", "STORES_DATA_FOR", "Postgres holds user data for AuthService", "Postgres", "AuthService", undefined
     );
   });
 
@@ -295,5 +295,69 @@ describe("processEntityExtraction", () => {
     expect(mockGetMentionCount).toHaveBeenCalledWith("ent-alice-sum");
     // generateEntitySummary called because count >= threshold
     expect(mockGenerateSummary).toHaveBeenCalledWith("ent-alice-sum");
+  });
+
+  // =====================================================================
+  // Open Metadata — entity & relationship metadata flow through pipeline
+  // =====================================================================
+
+  it("META_WORKER_01: entity metadata flows through resolveEntity call", async () => {
+    mockRunRead
+      .mockResolvedValueOnce([{ status: null, content: "Takes 50mg Aspirin daily" }])
+      .mockResolvedValueOnce([{ userId: "user-1" }])
+      .mockResolvedValueOnce([]) // P3 previous memories
+      .mockResolvedValueOnce([]); // Tier 1 batch — no hits
+    mockRunWrite.mockResolvedValue([]);
+    mockExtract.mockResolvedValue({
+      entities: [
+        { name: "Aspirin", type: "MEDICATION", description: "Pain reliever", metadata: { dosage: "50mg", frequency: "daily" } },
+      ],
+      relationships: [],
+    });
+    mockResolve.mockResolvedValueOnce("ent-aspirin");
+    mockLink.mockResolvedValue(undefined);
+    mockSummarizeDesc.mockResolvedValue(undefined);
+    mockGetMentionCount.mockResolvedValue(0);
+    mockGenerateSummary.mockResolvedValue(undefined);
+
+    await processEntityExtraction("mem-meta-01");
+
+    // resolveEntity receives the full extracted entity including metadata
+    expect(mockResolve).toHaveBeenCalledTimes(1);
+    const resolvedEntity = mockResolve.mock.calls[0][0];
+    expect(resolvedEntity.metadata).toEqual({ dosage: "50mg", frequency: "daily" });
+  });
+
+  it("META_WORKER_02: relationship metadata flows through linkEntities call", async () => {
+    mockRunRead
+      .mockResolvedValueOnce([{ status: null, content: "Alice works at Acme since 2024" }])
+      .mockResolvedValueOnce([{ userId: "user-1" }])
+      .mockResolvedValueOnce([]) // P3 previous memories
+      .mockResolvedValueOnce([]); // Tier 1 batch — no hits
+    mockRunWrite.mockResolvedValue([]);
+    mockExtract.mockResolvedValue({
+      entities: [
+        { name: "Alice", type: "PERSON", description: "Employee" },
+        { name: "Acme", type: "ORGANIZATION", description: "Company" },
+      ],
+      relationships: [
+        { source: "Alice", target: "Acme", type: "WORKS_AT", description: "Employee at Acme", metadata: { since: "2024-01", role: "Engineer" } },
+      ],
+    });
+    mockResolve.mockResolvedValueOnce("ent-alice").mockResolvedValueOnce("ent-acme");
+    mockLink.mockResolvedValue(undefined);
+    mockLinkEntities.mockResolvedValue(undefined);
+    mockSummarizeDesc.mockResolvedValue(undefined);
+    mockGetMentionCount.mockResolvedValue(0);
+    mockGenerateSummary.mockResolvedValue(undefined);
+
+    await processEntityExtraction("mem-meta-02");
+
+    // linkEntities receives metadata as 7th argument
+    expect(mockLinkEntities).toHaveBeenCalledTimes(1);
+    expect(mockLinkEntities).toHaveBeenCalledWith(
+      "ent-alice", "ent-acme", "WORKS_AT", "Employee at Acme", "Alice", "Acme",
+      { since: "2024-01", role: "Engineer" }
+    );
   });
 });

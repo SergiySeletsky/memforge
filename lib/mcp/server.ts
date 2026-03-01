@@ -604,8 +604,12 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
                   name: e.name,
                   type: e.type,
                   description: e.description,
+                  ...(Object.keys(e.metadata).length > 0 ? { metadata: e.metadata } : {}),
                   memory_count: e.memoryCount,
-                  relationships: e.relationships,
+                  relationships: e.relationships.map((r) => ({
+                    ...r,
+                    ...(Object.keys(r.metadata).length > 0 ? { metadata: r.metadata } : {}),
+                  })),
                 })),
               } : {}),
               ...(tagFilterWarning ? { tag_filter_warning: tagFilterWarning } : {}),

@@ -14,6 +14,8 @@ export interface ExtractedEntity {
   name: string;
   type: string;
   description: string;
+  /** Domain-specific structured properties (e.g. dosage, ticker, frequency). */
+  metadata?: Record<string, unknown>;
 }
 
 export interface ExtractedRelationship {
@@ -21,6 +23,8 @@ export interface ExtractedRelationship {
   target: string;
   type: string;
   description: string;
+  /** Domain-specific structured properties on the relationship. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface ExtractionResult {
@@ -46,7 +50,10 @@ function normalizeExtractedEntities(input: unknown): ExtractedEntity[] {
     const description = typeof maybe?.description === "string"
       ? maybe.description.trim()
       : "";
-    result.push({ name, type, description });
+    const metadata = (typeof maybe?.metadata === "object" && maybe.metadata !== null && !Array.isArray(maybe.metadata))
+      ? maybe.metadata as Record<string, unknown>
+      : undefined;
+    result.push({ name, type, description, ...(metadata ? { metadata } : {}) });
   }
   return result;
 }
@@ -63,7 +70,10 @@ function normalizeExtractedRelationships(input: unknown): ExtractedRelationship[
     const description = typeof maybe?.description === "string"
       ? maybe.description.trim()
       : "";
-    result.push({ source, target, type, description });
+    const metadata = (typeof maybe?.metadata === "object" && maybe.metadata !== null && !Array.isArray(maybe.metadata))
+      ? maybe.metadata as Record<string, unknown>
+      : undefined;
+    result.push({ source, target, type, description, ...(metadata ? { metadata } : {}) });
   }
   return result;
 }

@@ -14,6 +14,7 @@ import { runRead, runWrite } from "@/lib/db/memgraph";
 import { embed } from "@/lib/embeddings/openai";
 import { hybridSearch } from "@/lib/search/hybrid";
 import { deleteMemory } from "@/lib/memory/write";
+import { parseMetadata } from "@/lib/entities/resolve";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,12 +25,14 @@ export interface EntityProfile {
   name: string;
   type: string;
   description: string | null;
+  metadata: Record<string, unknown>;
   memoryCount: number;
   relationships: Array<{
     source: string;
     type: string;
     target: string;
     description: string | null;
+    metadata: Record<string, unknown>;
   }>;
 }
 
@@ -68,6 +71,7 @@ export async function searchEntities(
     name: string;
     type: string;
     description: string | null;
+    metadata: string | null;
     memoryCount: number;
   }>(
     `MATCH (u:User {userId: $userId})-[:HAS_ENTITY]->(e:Entity)
@@ -78,7 +82,7 @@ export async function searchEntities(
      WHERE m.invalidAt IS NULL
      WITH e, count(m) AS memoryCount
      RETURN e.id AS id, e.name AS name, e.type AS type,
-            e.description AS description, memoryCount
+            e.description AS description, e.metadata AS metadata, memoryCount
      ORDER BY memoryCount DESC
      LIMIT $limit`,
     params,
@@ -101,6 +105,7 @@ export async function searchEntities(
       name: string;
       type: string;
       description: string | null;
+      metadata: string | null;
       memoryCount: number;
     }>(
       `MATCH (u:User {userId: $userId})-[:HAS_ENTITY]->(e:Entity)
@@ -113,7 +118,7 @@ export async function searchEntities(
        ORDER BY similarity DESC
        LIMIT $limit
        RETURN e.id AS id, e.name AS name, e.type AS type,
-              e.description AS description, memoryCount`,
+              e.description AS description, e.metadata AS metadata, memoryCount`,
       semParams,
     );
   } catch {
@@ -139,6 +144,7 @@ export async function searchEntities(
         relType: string;
         targetName: string;
         description: string | null;
+        metadata: string | null;
       }>(
         `UNWIND $entityIds AS eid
          MATCH (u:User {userId: $userId})-[:HAS_ENTITY]->(center:Entity {id: eid})
@@ -146,7 +152,8 @@ export async function searchEntities(
          WITH center, r, tgt, eid
          WHERE r IS NOT NULL
          RETURN eid AS entityId, center.name AS sourceName, r.type AS relType,
-                tgt.name AS targetName, r.description AS description
+                tgt.name AS targetName, r.description AS description,
+                r.metadata AS metadata
          UNION ALL
          UNWIND $entityIds AS eid
          MATCH (u:User {userId: $userId})-[:HAS_ENTITY]->(center:Entity {id: eid})
@@ -154,7 +161,8 @@ export async function searchEntities(
          WITH center, src, r, eid
          WHERE r IS NOT NULL
          RETURN eid AS entityId, src.name AS sourceName, r.type AS relType,
-                center.name AS targetName, r.description AS description`,
+                center.name AS targetName, r.description AS description,
+                r.metadata AS metadata`,
         { userId, entityIds },
       )
     : [];
@@ -168,12 +176,14 @@ export async function searchEntities(
       type: r.relType,
       target: r.targetName,
       description: r.description,
+      metadata: parseMetadata(r.metadata),
     });
     relMap.set(r.entityId, list);
   }
 
   const results: EntityProfile[] = merged.slice(0, effectiveLimit).map((entity) => ({
     ...entity,
+    metadata: parseMetadata(entity.metadata),
     relationships: relMap.get(entity.id) ?? [],
   }));
 

@@ -18,6 +18,7 @@
 import { runRead, runWrite } from "@/lib/db/memgraph";
 import { getLLMClient } from "@/lib/ai/client";
 import { EDGE_CONTRADICTION_PROMPT } from "./prompts";
+import { serializeMetadata, parseMetadata, mergeMetadata } from "./resolve";
 
 export interface ExtractedRelationship {
   source: string;
@@ -98,18 +99,23 @@ export async function linkEntities(
   relType: string,
   description: string = "",
   sourceName: string = "",
-  targetName: string = ""
+  targetName: string = "",
+  metadata?: Record<string, unknown>
 ): Promise<void> {
   const normalizedRelType = relType.toUpperCase().replace(/\s+/g, "_");
   const now = new Date().toISOString();
 
   // Step 1: Check for existing live edge (no invalidAt)
-  const existing = await runRead<{ desc: string }>(
+  const existing = await runRead<{ desc: string; metadata: string | null }>(
     `MATCH (src:Entity {id: $sourceId})-[r:RELATED_TO {type: $relType}]->(tgt:Entity {id: $targetId})
      WHERE r.invalidAt IS NULL
-     RETURN coalesce(r.description, '') AS desc`,
+     RETURN coalesce(r.description, '') AS desc, r.metadata AS metadata`,
     { sourceId: sourceEntityId, targetId: targetEntityId, relType: normalizedRelType }
   );
+
+  // Merge incoming metadata with existing edge metadata (for replacement edges)
+  const existingEdgeMeta = existing.length > 0 ? parseMetadata(existing[0].metadata) : {};
+  const mergedMeta = serializeMetadata(mergeMetadata(existingEdgeMeta, metadata));
 
   if (existing.length > 0) {
     const oldDesc = existing[0].desc;
@@ -158,6 +164,7 @@ export async function linkEntities(
      CREATE (src)-[r:RELATED_TO {
        type: $relType,
        description: $desc,
+       metadata: $metadata,
        validAt: $now,
        createdAt: $now,
        updatedAt: $now
@@ -168,6 +175,7 @@ export async function linkEntities(
       targetId: targetEntityId,
       relType: normalizedRelType,
       desc: description,
+      metadata: mergedMeta,
       now,
     }
   );

@@ -104,11 +104,12 @@ export async function processEntityExtraction(memoryId: string): Promise<void> {
 
     // Step 7: Create [:RELATED_TO] edges between resolved entities
     //         Pass entity names for temporal contradiction LLM prompt context
+    //         Pass metadata for domain-specific attributes on edges
     for (const rel of relationships) {
       const sourceId = entityNameToId.get(rel.source.toLowerCase());
       const targetId = entityNameToId.get(rel.target.toLowerCase());
       if (sourceId && targetId && sourceId !== targetId) {
-        await linkEntities(sourceId, targetId, rel.type, rel.description, rel.source, rel.target);
+        await linkEntities(sourceId, targetId, rel.type, rel.description, rel.source, rel.target, rel.metadata);
       }
     }
 

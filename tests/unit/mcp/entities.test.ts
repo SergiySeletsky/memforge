@@ -103,6 +103,7 @@ describe("searchEntities", () => {
       type: "WORKS_AT",
       target: "Acme",
       description: null,
+      metadata: {},
     });
   });
 
@@ -226,12 +227,14 @@ describe("searchEntities", () => {
       type: "MANAGES",
       target: "Team A",
       description: "Direct reports",
+      metadata: {},
     });
     expect(result[0].relationships[1]).toEqual({
       source: "HR",
       type: "OVERSEES",
       target: "Alice",
       description: null,
+      metadata: {},
     });
   });
 

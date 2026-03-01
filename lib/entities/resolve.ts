@@ -1,4 +1,4 @@
-﻿/**
+/**
  * lib/entities/resolve.ts â€” Entity resolution / find-or-create (Spec 04)
  *
  * Uses Cypher to atomically find or create an Entity node for the user.
@@ -76,6 +76,48 @@ function isMoreSpecific(newType: string, existingType: string): boolean {
 
 const SEMANTIC_DEDUP_THRESHOLD = 0.88;
 const SEMANTIC_DEDUP_TOP_K = 5;
+
+// ---------------------------------------------------------------------------
+// Metadata helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Serialize a metadata object to a JSON string for Memgraph storage.
+ * Returns '{}' for undefined/null/empty objects.
+ */
+export function serializeMetadata(meta: Record<string, unknown> | undefined): string {
+  if (!meta || Object.keys(meta).length === 0) return "{}";
+  return JSON.stringify(meta);
+}
+
+/**
+ * Parse a JSON metadata string from Memgraph. Returns empty object on failure.
+ */
+export function parseMetadata(raw: string | null | undefined): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Shallow-merge incoming metadata into existing metadata.
+ * Newer keys win (overwrite), existing keys not in incoming are preserved.
+ * Returns the merged object.
+ */
+export function mergeMetadata(
+  existing: Record<string, unknown>,
+  incoming: Record<string, unknown> | undefined
+): Record<string, unknown> {
+  if (!incoming || Object.keys(incoming).length === 0) return existing;
+  return { ...existing, ...incoming };
+}
 
 // ---------------------------------------------------------------------------
 // Semantic entity lookup
@@ -265,18 +307,36 @@ export async function resolveEntity(
     const shouldUpgradeDesc =
       (extracted.description ?? "").length > existing[0].description.length;
 
-    if (shouldUpgradeType || shouldUpgradeDesc) {
+    // Metadata merge: read current metadata, shallow-merge with incoming
+    const hasIncomingMeta = extracted.metadata && Object.keys(extracted.metadata).length > 0;
+    const shouldUpdate = shouldUpgradeType || shouldUpgradeDesc || !!hasIncomingMeta;
+
+    if (shouldUpdate) {
+      // Read current metadata from the entity node
+      let mergedMetaStr = serializeMetadata(extracted.metadata);
+      if (hasIncomingMeta) {
+        const currentRows = await runRead<{ metadata: string | null }>(
+          `MATCH (e:Entity {id: $entityId}) RETURN coalesce(e.metadata, '{}') AS metadata`,
+          { entityId }
+        );
+        const currentMeta = parseMetadata(currentRows[0]?.metadata);
+        mergedMetaStr = serializeMetadata(mergeMetadata(currentMeta, extracted.metadata));
+      }
+
       await runWrite(
         `MATCH (e:Entity {id: $entityId})
          SET e.type = CASE WHEN $shouldUpgradeType THEN $newType ELSE e.type END,
              e.description = CASE WHEN $shouldUpgradeDesc THEN $newDesc ELSE e.description END,
+             e.metadata = CASE WHEN $hasIncomingMeta THEN $metadata ELSE e.metadata END,
              e.updatedAt = $now`,
         {
           entityId,
           shouldUpgradeType,
           shouldUpgradeDesc,
+          hasIncomingMeta: !!hasIncomingMeta,
           newType: normalizedType,
           newDesc: extracted.description ?? "",
+          metadata: mergedMetaStr,
           now,
         }
       );
@@ -295,6 +355,7 @@ export async function resolveEntity(
        MERGE (u)-[:HAS_ENTITY]->(e:Entity {normalizedName: $normalizedName, userId: $userId})
        ON CREATE SET e.id = $id, e.name = $name, e.type = $type,
                      e.description = $description,
+                     e.metadata = $metadata,
                      e.createdAt = $now, e.updatedAt = $now
        RETURN e.id AS entityId`,
       {
@@ -304,6 +365,7 @@ export async function resolveEntity(
         normalizedName: normName,
         type: normalizedType,
         description: extracted.description ?? "",
+        metadata: serializeMetadata(extracted.metadata),
         now,
       }
     );

@@ -23,15 +23,23 @@ For each entity, provide:
   Use CONCEPT only for abstract ideas without a more specific type.
   Use OTHER only when nothing else fits.
 - description: A brief description based on context (1 sentence max)
+- metadata: (optional) A flat JSON object with domain-specific structured attributes that are
+  explicitly stated in the text. Only include concrete, factual values — not inferences.
+  Examples: {"dosage": "50mg", "frequency": "daily"}, {"ticker": "AAPL", "sector": "Technology"},
+  {"language": "TypeScript", "version": "5.0"}, {"population": 8336817, "country": "USA"}.
+  Omit metadata entirely if no structured attributes are stated.
 
 For each relationship between entities, provide:
 - source: Name of the source entity (must match an entity name above)
 - target: Name of the target entity (must match an entity name above)
 - type: Relationship type in UPPER_SNAKE_CASE (e.g. WORKS_AT, USES, DEPENDS_ON, LOCATED_IN, CREATED_BY, MANAGES, PART_OF)
 - description: A brief description of the relationship (1 sentence max)
+- metadata: (optional) A flat JSON object with domain-specific structured attributes on the relationship.
+  Examples: {"since": "2024-01", "role": "Senior Engineer"}, {"dosage": "500mg", "frequency": "twice daily"}.
+  Omit metadata entirely if no structured attributes are stated.
 
 Return ONLY valid JSON:
-{"entities": [{"name": "...", "type": "...", "description": "..."}], "relationships": [{"source": "...", "target": "...", "type": "...", "description": "..."}]}
+{"entities": [{"name": "...", "type": "...", "description": "...", "metadata": {...}}], "relationships": [{"source": "...", "target": "...", "type": "...", "description": "...", "metadata": {...}}]}
 If no entities found, return {"entities": [], "relationships": []}`;
 
 // ---------------------------------------------------------------------------

@@ -835,8 +835,9 @@ describe("MCP Tool Handlers -- search_memory entity enrichment", () => {
         name: "Alice",
         type: "PERSON",
         description: "Engineer",
+        metadata: {},
         memoryCount: 5,
-        relationships: [{ source: "Alice", target: "Acme", type: "WORKS_AT", description: null }],
+        relationships: [{ source: "Alice", target: "Acme", type: "WORKS_AT", description: null, metadata: {} }],
       },
     ]);
 
@@ -1961,7 +1962,7 @@ describe("MCP search_memory — include_entities default true", () => {
     ]);
     mockRunWrite.mockResolvedValueOnce([]);
     mockSearchEntities.mockResolvedValueOnce([
-      { id: "e1", name: "Alice", type: "PERSON", description: "Engineer", memoryCount: 5, relationships: [] },
+      { id: "e1", name: "Alice", type: "PERSON", description: "Engineer", metadata: {}, memoryCount: 5, relationships: [] },
     ]);
 
     const result = await client.callTool({
