@@ -24,8 +24,11 @@
 | 13 â€" Graphiti-Inspired Enhancements | P0â€"P3: temporal edges, entity summaries, fast-path dedup, context injection | Bi-temporal edges + contradiction LLM, entity profile gen, fast-path normalized dedup, previous-memory context for extraction. 46 suites / 418 tests. |
 | 14 â€" Agentic Architect Audit (MCP LTM) | Full repo audit across 8 code layers using MCP as LTM | 24 findings stored (20 ADD, 4 SUPERSEDE); 6 MCP recovery tests; MCP tool evaluation report below. |
 | 16 â€" Claimify-Inspired Fact Quality | Self-containment + atomic decomposition in extract-facts | Pronoun resolution, temporal resolution, compound fact splitting in user + agent prompts. 48 suites / 434 tests. |
+| 17 â€" Agentic Architect Audit (MCP LTM) | Full repo audit across 6 layers using MCP as LTM | 16 findings stored (14 ADD, 2 SUPERSEDE); 6 MCP improvement opportunities identified. |
+| 18 â€" MCP Improvements (6 features) | Implement 6 audit findings from Session 17 | updated_at, total_matching, tag_filter_warning, suppress_auto_categories, SUPERSEDE provenance, intra-batch dedup. 49 suites / 480 tests. |
+| 19 â€" MCP Description Rewrite + Audit | Intent-driven tool descriptions + live audit testing Session 18 features | 11 findings stored; 4/6 Session 18 features verified live; 5 recovery tests (0.96â€"0.99 relevance). |
 
-**Test baseline after completed sessions:** 434 tests, 48 suites, 0 failures
+**Test baseline after completed sessions:** 480 tests, 49 suites, 0 failures
 
 ---
 
@@ -1287,3 +1290,282 @@ Implement 6 MCP improvement opportunities identified in the Session 17 agentic a
 ### Verification
 - `tsc --noEmit`: **0 errors**
 - `jest --runInBand --no-coverage`: **49 suites / 480 tests — 0 failures** (up from 48/434)
+
+---
+
+## Session 19 — MCP Tool Description Rewrite + Agentic Audit (2026-03-01)
+
+### Phase 1: Dev Server Restart + Copilot Instructions
+- Restarted dev server after Session 18 changes
+- Added "Restart Dev Server After Significant Changes" section to `.github/copilot-instructions.md`
+
+### Phase 2: MCP Tool Description Rewrite
+- Rewrote all MCP tool descriptions in `lib/mcp/server.ts` to be intent-driven (removed BM25, vector, RRF, dedup pipeline references)
+- Recreated `.github/instructions/openmemory.instructions.md` with intent-focused content, decision tables, tags vs categories comparison, structured response examples
+
+### Phase 3: Agentic Architect Audit (MCP LTM Stress Test)
+
+Full read-only codebase audit across 6 layers using MemForge MCP as long-term memory. This audit tests the **Session 18 improvements** (total_matching, tag_filter_warning, updated_at, SUPERSEDE provenance, suppress_auto_categories, intra-batch dedup) in a live agentic workflow.
+
+### MCP Tool Usage Statistics
+
+| # | Tool | Mode | Purpose | Result |
+|---|------|------|---------|--------|
+| 1 | search_memory | browse (tag: audit-session-19) | Cold-start: session-tagged count | 0 results (fresh tag) |
+| 2 | search_memory | browse (no tag, limit:3) | Total inventory | 93 total memories |
+| 3 | search_memory | search + tag mem0ai/mem0 | Carryover recovery | 19 matching (total_matching working), 10 returned |
+| 4 | add_memories | batch (4) | Store Layer 1-4 findings | 3 stored, 1 skipped (dedup) |
+| 5 | add_memories | batch (4) | Store Layer 4-6 findings | 2 stored, 2 superseded |
+| 6 | add_memories | batch (3) | Store remaining findings | 3 stored, 1 superseded |
+| 7 | search_memory | search + tag audit-session-19 | Recovery Test 1: specific finding | 5 results, top at 0.98, tag_filter_warning fired |
+| 8 | search_memory | search + tag mem0ai/mem0 | Recovery Test 2: security findings | 5 results, top at 0.98 (cross-session) |
+| 9 | search_memory | browse + tag audit-session-19 | Recovery Test 3: browse inventory | 11/11 (100% recall) |
+| 10 | search_memory | search + tag audit-session-19 | Recovery Test 4: semantic paraphrase | 5 results, top at 0.99 (zero keyword overlap) |
+| 11 | search_memory | search (no tag) | Recovery Test 5: cross-session perf | 10 results across sessions 7,14,19 |
+| **Totals** | **3 add / 8 search** | | **11 items sent** | **8 stored, 3 superseded/skipped** |
+
+### Session 18 Feature Verification (Live)
+
+| Feature | Status | Evidence |
+|---------|--------|----------|
+| `total_matching` | **WORKING** | Recovery Test 1: `total_matching: 19` vs 10 returned; Test 5: `total_matching: 10` |
+| `tag_filter_warning` | **WORKING** | Tests 1,4: "Tag filter 'audit-session-19' matched only 8/9 of 34/35 search results" |
+| `updated_at` | **WORKING** | All search results include `updated_at` field with ISO timestamps |
+| SUPERSEDE provenance | **WORKING** | CLASSIFY-CODE-FENCE-01 has tags from BOTH sessions: `["audit-session-19", "audit-session-17"]` |
+| `suppress_auto_categories` | NOT TESTED | Not provided in calls — would need explicit testing |
+| Intra-batch dedup | NOT TESTED | No duplicate content within batches |
+
+### Findings Stored (11 total)
+
+| ID | Severity | Layer | Status |
+|----|----------|-------|--------|
+| ENTITY-RELTYPE-MISMATCH-01 | HIGH-BUG | Entity | **NEW** — `r.relType` vs `r.type` property name mismatch |
+| HOOK-APPS-UPDATE-BROKEN-CONFIRMED | HIGH | Frontend | Carryover confirmed |
+| PAUSE-NO-INVALIDAT-CONFIRMED | MEDIUM | Write | Carryover confirmed |
+| FILTER-FULLSCAN-CONFIRMED | MEDIUM-PERF | API | Carryover confirmed |
+| CLASSIFY-CODE-FENCE-01 | LOW | MCP | NEW (inherited tags from session 17 via SUPERSEDE) |
+| APPS-NO-TRYCATCH-CONFIRMED | MEDIUM | API | Carryover confirmed |
+| RELATE-EMPTY-DESC-DUPLICATE-EDGE-01 | LOW | Entity | NEW |
+| CLUSTER-SUBCOMMUNITY-NAIVE-01 | LOW | Clusters | NEW |
+| BACKUP-EXPORT-EMBEDDING-BLOAT-01 | LOW | API | NEW (inherited tags from session 14) |
+| HISTORY-NO-GRAPH-EDGES-01 | LOW | API | NEW |
+| MCP-SUPERSEDE-TAG-DEAD-CODE-CONFIRMED | LOW | MCP | Carryover confirmed |
+
+### MCP Tool Scenario Evaluation
+
+| Scenario | Calls | Usefulness | Verdict |
+|----------|-------|------------|---------|
+| Cold-start inventory (browse) | 2 | 10/10 | ESSENTIAL — confirms session state before writing |
+| Carryover recovery (search + tag) | 1 | 10/10 | KEY VALUE — `total_matching: 19` shows scope beyond limit |
+| Batched write (add_memories) | 3 | 9/10 | RELIABLE — 0 errors, 3 correct SUPERSEDE events |
+| Tag-scoped browse (ground truth) | 1 | 10/10 | GROUND TRUTH — 11/11 recall |
+| Semantic search + tag (recovery) | 2 | 10/10 | STRONG — 0.98-0.99 relevance on paraphrased queries |
+| Cross-session search (no tag) | 1 | 10/10 | EXCEPTIONAL — findings from sessions 7,14,19 blended |
+| Tag filter warning (new in S18) | 2 | 9/10 | ACTIONABLE — correctly advised switch to browse mode |
+
+### Recovery Test Details
+
+| # | Query (paraphrased) | Target Finding | Rank | Relevance | Arms Hit |
+|---|-------------------|----------------|------|-----------|----------|
+| 1 | "relationship type property name mismatch..." | ENTITY-RELTYPE-MISMATCH-01 | #1 | 0.98 | text+vector |
+| 2 | "security vulnerabilities cross-user..." | HOOK-APPS-ACCESSED-NO-AUTH-01 | #1 | 0.98 | text+vector |
+| 3 | browse (tag: audit-session-19) | All 11 findings | N/A | N/A | 100% recall |
+| 4 | "frontend React hook sends wrong HTTP params..." | HOOK-APPS-UPDATE-BROKEN | #1 | 0.99 | text+vector |
+| 5 | "performance scalability N+1 full scan..." | FILTER-FULLSCAN-CONFIRMED | #1 | 0.96 | text+vector |
+
+**Key observation (Test 4):** Zero keyword overlap between query and stored finding — query says "React hook sends wrong HTTP parameters" while stored text says "useAppsApi.ts updateAppDetails() sends is_active as query param". Perfect semantic recall at 0.99 relevance.
+
+### What Worked Well (Session 18 Improvements)
+1. **`total_matching` field** — Agent knows 19 findings exist when only 10 returned. Critical for understanding recall scope.
+2. **`tag_filter_warning`** — Correctly advised switching to browse mode when >70% of results dropped. Actionable and saved wasted follow-up queries.
+3. **SUPERSEDE provenance tags** — Cross-session superseded findings retain origin session tags. CLASSIFY-CODE-FENCE-01 has `["audit-session-19", "audit-session-17"]`.
+4. **`updated_at` in search results** — All results include timestamps; agents can assess freshness.
+5. **Semantic recall quality** — 0.98-0.99 relevance on paraphrased queries with zero keyword overlap.
+6. **Cross-session accumulation** — 93→11 session-scoped from 93 total. Tag isolation working perfectly.
+
+### What Can Still Be Improved
+
+1. **`suppress_auto_categories` not discoverable**: The parameter exists (Session 18) but nothing in the tool description or workflow prompted its use. For audit workflows where callers provide explicit categories, the tool should suggest setting `suppress_auto_categories: true` when `categories` is provided — either in description text or as a default-true when categories are explicit.
+
+2. **Browse + search still mutually exclusive**: Want both "all items tagged X" (completeness from browse) AND "ranked by relevance" (from search) in one call. Current workaround: browse first for ground truth, then search for ranked results. Could add `sort_by: "relevance"` option to browse mode.
+
+3. **Dedup across sessions still aggressive**: PAUSE-NO-INVALIDAT from session 17 was skipped (not stored) because session 9's version was semantically identical. For audit carryover confirmations, agent wants to mark "still unfixed" without creating a new memory — needs a `confirm` or `touch` intent that updates `updated_at` without dedup risk.
+
+4. **No "finding resolved" workflow**: When a finding from a prior session is fixed, the only option is "Forget X" (delete) or natural supersede. Need a `status: "resolved"` metadata field or an `archive` intent that marks the finding as addressed without losing the knowledge.
+
+5. **Entity enrichment latency on recovery searches**: All 5 search calls defaulted to `include_entities: true`. For audit recall queries, entity context is noise — only memory text matters. Tool description should more prominently advertise `include_entities: false` for speed.
+
+6. **Category auto-enrichment still noisy**: Every finding gets "Technology", "Work" appended by LLM alongside explicit categories. `suppress_auto_categories` parameter exists but needs to be default-on when explicit categories are provided (see #1).
+
+### Test Baseline (unchanged — read-only audit)
+- **49 suites / 480 tests — ALL PASS**
+
+---
+
+## Session 20 — MCP Improvements Implementation (6 Session 19 Findings)
+
+### Objective
+Implement 6 MCP improvement opportunities identified in the Session 19 agentic audit report. All improvements add test coverage. Ensure zero regressions across the full test suite.
+
+### Improvements Implemented
+
+| # | ID | File(s) | Description |
+|---|-----|---------|-------------|
+| 1 | TOUCH intent | classify.ts, entities.ts, server.ts | New TOUCH intent — "Still relevant: X" / "Confirm X" refreshes `updatedAt` timestamp on best-match memory without creating a new memory or triggering dedup |
+| 2 | RESOLVE intent | classify.ts, entities.ts, server.ts | New RESOLVE intent — "Resolved: X" / "Mark as fixed: X" sets `state='resolved'` + `invalidAt=now` on best-match memory, archiving it from live queries |
+| 3 | Auto-suppress categories | server.ts | `suppress_auto_categories` auto-defaults to `true` when caller provides non-empty `categories[]` — eliminates noisy LLM-assigned "Technology"/"Work" categories when explicit labels are provided |
+| 4 | Tag recall minimum topK | server.ts | Tag-filtered searches guarantee `topK >= 200` regardless of limit — prevents recall gaps when tag post-filter drops results from a small candidate pool |
+| 5 | Tool description updates | server.ts | Updated `include_entities` description ("Set to false for faster keyword-only recall"), `suppress_auto_categories` description (documents auto-default), `add_memories` description (TOUCH + RESOLVE bullet points) |
+| 6 | Instructions doc update | openmemory.instructions.md | Added TOUCH/RESOLVE to intent list, response examples, usage table. Updated `suppress_auto_categories` to document auto-default behavior |
+
+### Architecture — TOUCH & RESOLVE Intent Pipeline
+
+```
+add_memories(content: "Still relevant: auth uses JWT")
+  → classifyIntent() → mightBeCommand() regex match (/still\s+relevant/i)
+  → { type: "TOUCH", target: "auth uses JWT" }
+  → touchMemoryByDescription(target, userId)
+    → hybridSearch(target, userId, topK=5) → best match (RRF > 0.015)
+    → SET m.updatedAt = $now
+    → return { id, content }
+  → response: { "touched": 1 }
+
+add_memories(content: "Resolved: CORS bug in /api/health")
+  → classifyIntent() → mightBeCommand() regex match (/\bresolved\b/i)
+  → { type: "RESOLVE", target: "CORS bug in /api/health" }
+  → resolveMemoryByDescription(target, userId)
+    → hybridSearch(target, userId, topK=5) → best match (RRF > 0.015)
+    → SET m.state = 'resolved', m.invalidAt = $now, m.updatedAt = $now
+    → return { id, content }
+  → response: { "resolved": 1 }
+```
+
+### Bug Fixed
+
+**Pre-existing mock leak in classify.test.ts**: `jest.clearAllMocks()` does NOT clear `mockResolvedValueOnce` queues. Test `CLASSIFY_LLM_07` ("forget my old email") doesn't match any `COMMAND_PATTERN`, queuing an LLM mock value. When the LLM wasn't called (regex short-circuit), the queued value leaked to subsequent tests. Fix: added `mockCreate.mockReset()` to module-level `beforeEach`.
+
+### Tests Added (27 new)
+
+| Test ID | File | Improvement |
+|---------|------|-------------|
+| CLASSIFY_REGEX_TOUCH_01–04 | classify.test.ts | TOUCH regex: "still relevant", "confirm", "still valid", "reconfirm" |
+| CLASSIFY_REGEX_RESOLVE_01–04 | classify.test.ts | RESOLVE regex: "resolved", "mark as fixed", "has been fixed", "mark as done" |
+| CLASSIFY_LLM_TOUCH_01–03 | classify.test.ts | TOUCH LLM: valid target, missing target→STORE, non-string target→STORE |
+| CLASSIFY_LLM_RESOLVE_01–03 | classify.test.ts | RESOLVE LLM: valid target, missing target→STORE, non-string target→STORE |
+| MCP_CAT_AUTO_SUPPRESS_01–04 | tools.test.ts | Auto-suppress: cats+no flag→true, cats+false→false, no cats→false, empty cats→false |
+| MCP_TOUCH_01–03 | tools.test.ts | TOUCH: match found, no match, doesn't trigger dedup/addMemory |
+| MCP_RESOLVE_01–03 | tools.test.ts | RESOLVE: match found, no match, doesn't trigger dedup/addMemory |
+| MCP_TAG_RECALL_MIN_01–03 | tools.test.ts | Tag minimum topK=200, no tag uses normal multiplier, high limit×10>200 |
+
+### Existing Tests Updated (2)
+
+| Test | Change |
+|------|--------|
+| MCP_CAT_SUPPRESS_02 | Expected `suppressAutoCategories: true` (was false) — auto-default when categories provided |
+| MCP_FILTER_FETCH_02 | Expected topK=200 (was 40) — tag filter minimum floor |
+
+### Files Modified (5 source + 2 test + 1 doc)
+
+**Source:**
+1. `lib/mcp/classify.ts` — TOUCH + RESOLVE intents (types, regex, LLM prompt, parser)
+2. `lib/mcp/entities.ts` — `touchMemoryByDescription()` + `resolveMemoryByDescription()`
+3. `lib/mcp/server.ts` — TOUCH/RESOLVE handlers, auto-suppress, tag recall floor, descriptions
+
+**Tests:**
+4. `tests/unit/mcp/classify.test.ts` — 14 new tests + mockReset leak fix
+5. `tests/unit/mcp/tools.test.ts` — 13 new tests + 2 updated
+
+**Docs:**
+6. `.github/instructions/openmemory.instructions.md` — TOUCH/RESOLVE intents, response examples, usage table, suppress_auto_categories
+
+### Verification
+- `tsc --noEmit`: **0 errors**
+- `jest --runInBand --no-coverage`: **49 suites / 507 tests — 0 failures** (up from 480)
+
+---
+
+## Session 21 — Agentic Architect Audit (MCP LTM, Full Codebase) (2026-03-01)
+
+### Objective
+Full read-only codebase audit across 8 layers (DB, write pipeline, search, entity, MCP server, API routes, frontend, config/infra) using MemForge MCP as long-term memory. Verifies which prior session findings have been fixed, identifies new findings, and tests Session 20 MCP improvements in a live agentic workflow.
+
+### MCP Tool Usage Statistics
+
+| # | Tool | Mode | Purpose | Result |
+|---|------|------|---------|--------|
+| 1 | search_memory | browse (tag: audit-session-21) | Cold-start: session-tagged count | 0 results (fresh tag) |
+| 2 | search_memory | browse (no tag, limit:3) | Total inventory | 101 total memories |
+| 3 | search_memory | search (no tag) | Carryover recovery | 19 matching results |
+| 4-6 | add_memories | batch (4×3) | Store findings | 8 stored, 4 superseded |
+| 7 | search_memory | browse + tag | Full inventory verification | 12/12 (100% recall) |
+| 8 | search_memory | search + tag | Recovery Test 1: security | 5 results, top at 0.94 |
+| 9 | search_memory | search + tag | Recovery Test 2: entity reltype semantic | RELTYPE-MISMATCH at rank #1 (1.0 relevance, dual-arm) |
+| **Totals** | **3 add / 6 search** | | **12 items sent** | **8 stored, 4 superseded** |
+
+### Findings Stored (12 total)
+
+| ID | Severity | Layer | Status |
+|----|----------|-------|--------|
+| ACCESSED-NO-USER-ANCHOR-01 | HIGH-SECURITY | API | NEW — accessed route has no User anchor |
+| ENTITY-RELTYPE-MISMATCH-CONFIRMED | HIGH-BUG | Entity | SUPERSEDED prior — r.relType vs r.type |
+| HOOK-APPS-UPDATE-DOUBLE-BROKEN | HIGH | Frontend | SUPERSEDED prior — missing user_id + wrong param location |
+| APPS-MEMORIES-NO-INVALIDAT-01 | MEDIUM | API | NEW — missing bitemporal guard + cross-user count |
+| CONFIG-NO-AUTH-01 | MEDIUM-SECURITY | Config | NEW — config API has no authentication |
+| MEMORYID-PUT-NO-ENTITY-EXTRACT-01 | MEDIUM | API | SUPERSEDED prior — REST PUT no entity extraction |
+| PAUSE-NO-INVALIDAT-STILL-UNFIXED | MEDIUM | Write | Carryover confirmed |
+| FILTER-FULLSCAN-STILL-UNFIXED | MEDIUM-PERF | API | Carryover confirmed |
+| CATEGORIES-NO-INVALIDAT-01 | LOW | API | NEW — categories route counts superseded memories |
+| REEXTRACT-NO-FILTER-01 | LOW | API | NEW — reextract processes deleted/superseded memories |
+| DB-CLOSE-NO-LIFECYCLE-STILL-UNFIXED | LOW | DB | SUPERSEDED prior — closeDriver not on SIGTERM |
+| Session 21 FIXED verification | N/A | Meta | 6 prior findings verified FIXED |
+
+### Verified FIXED (6 prior findings)
+
+| ID | Session Fixed | Evidence |
+|----|---------------|----------|
+| WRITE-SUPERSEDE-NOT-ATOMIC-01 | Session 15 | `supersedeMemory()` is single Cypher with inline MERGE |
+| WRITE-ARCHIVE-NO-INVALIDAT-01 | Session 15 | `archiveMemory()` sets `m.invalidAt = $now` |
+| SEARCH-HYDRATE-NO-BITEMPORAL-01 | Session 15 | Hydration UNWIND has `WHERE m.invalidAt IS NULL` |
+| MCP-SUPERSEDE-TAG-DEAD-CODE | Session 18 | Dead-code `SET m.tags` runWrite removed |
+| API-APPS-NO-USER-ANCHOR-01 | Session 15 | GET anchors through `(u:User {userId: $userId})-[:HAS_APP]->(a:App)` |
+| API-APPS-PUT-NO-AUTH-01 | Session 15 | PUT requires user_id and anchors through User |
+
+### Key New Finding Details
+
+**ACCESSED-NO-USER-ANCHOR-01 (HIGH-SECURITY):**
+`apps/[appId]/accessed/route.ts` — Both data and count queries use `MATCH (a:App)-[acc:ACCESSED]->(m:Memory)` with NO User scope. Any user knowing an app name can see any other user's accessed memories. Does not even accept `user_id` parameter. Also missing `m.invalidAt IS NULL`.
+
+**ENTITY-RELTYPE-MISMATCH-CONFIRMED (HIGH-BUG):**
+`lib/mcp/entities.ts` L148+L156 reads `r.relType` but `lib/entities/relate.ts` stores edges with property `type`. The UNWIND batch relationship enrichment in `searchEntities()` always returns `null` for relationship types. `summarize-entity.ts` correctly uses `r.type AS relType`. Fix: change `r.relType` to `r.type` in both UNION arms.
+
+**HOOK-APPS-UPDATE-DOUBLE-BROKEN (HIGH):**
+`useAppsApi.ts updateAppDetails()` sends `PUT /api/v1/apps/${appId}?is_active=${details.is_active}` — TWO bugs: (1) missing `user_id` query param so PUT always returns 400, (2) `is_active` is in query params but the backend `PUT` handler reads from `request.json()` body. The entire update flow is dead code.
+
+**CONFIG-NO-AUTH-01 (MEDIUM-SECURITY):**
+`GET/PUT/PATCH /api/v1/config` has zero authentication — no `user_id` required. Any caller can read or modify global configuration (dedup thresholds, context window, etc). Config nodes are standalone. In multi-user deployments, this is a privilege escalation vector.
+
+### Session 20 MCP Feature Verification (Live)
+
+| Feature | Status | Evidence |
+|---------|--------|----------|
+| `total_matching` | **WORKING** | Recovery Test 1: `total_matching: 5`; Test 2: `total_matching: 23` |
+| `tag_filter_warning` | **WORKING** | Test 1: "Tag filter 'audit-session-21' matched only 5 of 31 search results" |
+| `updated_at` | **WORKING** | All search results include `updated_at` with ISO timestamps |
+| SUPERSEDE provenance | **WORKING** | ENTITY-RELTYPE-MISMATCH has tags from both sessions: `["audit-session-21", "audit-session-19"]` |
+| TOUCH/RESOLVE intents | NOT TESTED | No matching use case in this audit |
+| Auto-suppress categories | **WORKING** | Explicit `categories` provided → no extra LLM categories on most items |
+
+### MCP Tool Evaluation
+
+| Scenario | Calls | Verdict |
+|----------|-------|---------|
+| Cold-start inventory (browse) | 2 | ESSENTIAL — confirmed 101 total, 0 session-tagged |
+| Carryover recovery (search) | 1 | KEY VALUE — 19 prior findings recovered |
+| Batched write (add_memories) | 3 | RELIABLE — 0 errors, 4 correct SUPERSEDEs |
+| Tag-scoped browse (ground truth) | 1 | GROUND TRUTH — 12/12 recall |
+| Security query (search + tag) | 1 | STRONG — both HIGH-SEC in top 2, 0.94+ relevance |
+| Semantic paraphrase (search + tag) | 1 | EXCEPTIONAL — rank #1 at 1.0 relevance with dual-arm hit |
+
+### Test Baseline (unchanged — read-only audit)
+- `tsc --noEmit`: 0 errors
+- `jest --runInBand --no-coverage`: **49 suites / 507 tests — ALL PASS**

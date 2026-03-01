@@ -92,6 +92,8 @@ jest.mock("@/lib/mcp/entities", () => ({
   searchEntities: jest.fn(),
   invalidateMemoriesByDescription: jest.fn(),
   deleteEntityByNameOrId: jest.fn(),
+  touchMemoryByDescription: jest.fn(),
+  resolveMemoryByDescription: jest.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -105,7 +107,7 @@ import { hybridSearch } from "@/lib/search/hybrid";
 import { checkDeduplication } from "@/lib/dedup";
 import { processEntityExtraction } from "@/lib/entities/worker";
 import { classifyIntent } from "@/lib/mcp/classify";
-import { searchEntities, invalidateMemoriesByDescription, deleteEntityByNameOrId } from "@/lib/mcp/entities";
+import { searchEntities, invalidateMemoriesByDescription, deleteEntityByNameOrId, touchMemoryByDescription, resolveMemoryByDescription } from "@/lib/mcp/entities";
 
 const mockAddMemory = addMemory as jest.MockedFunction<typeof addMemory>;
 const mockSupersedeMemory = supersedeMemory as jest.MockedFunction<typeof supersedeMemory>;
@@ -116,6 +118,8 @@ const mockClassifyIntent = classifyIntent as jest.MockedFunction<typeof classify
 const mockSearchEntities = searchEntities as jest.MockedFunction<typeof searchEntities>;
 const mockInvalidateMemories = invalidateMemoriesByDescription as jest.MockedFunction<typeof invalidateMemoriesByDescription>;
 const mockDeleteEntity = deleteEntityByNameOrId as jest.MockedFunction<typeof deleteEntityByNameOrId>;
+const mockTouchMemory = touchMemoryByDescription as jest.MockedFunction<typeof touchMemoryByDescription>;
+const mockResolveMemory = resolveMemoryByDescription as jest.MockedFunction<typeof resolveMemoryByDescription>;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -552,7 +556,7 @@ describe("MCP Tool Handlers — search_memory", () => {
     );
   });
 
-  it("MCP_FILTER_FETCH_02: fetches 10× limit candidates when tag filter active (MCP-FILTER-02)", async () => {
+  it("MCP_FILTER_FETCH_02: fetches min(10×, 200) candidates when tag filter active (MCP-FILTER-02 + MCP-TAG-RECALL-02)", async () => {
     mockHybridSearch.mockResolvedValueOnce([]);
     mockRunWrite.mockResolvedValueOnce([]);
 
@@ -561,9 +565,10 @@ describe("MCP Tool Handlers — search_memory", () => {
       arguments: { query: "tagged query", tag: "session-42", limit: 4 },
     });
 
+    // MCP-TAG-RECALL-02: tag search uses Math.max(limit*10, 200) → 200
     expect(mockHybridSearch).toHaveBeenCalledWith(
       "tagged query",
-      expect.objectContaining({ topK: 40 })
+      expect.objectContaining({ topK: 200 })
     );
   });
 
@@ -1386,7 +1391,7 @@ describe("MCP add_memories — suppress_auto_categories", () => {
     );
   });
 
-  it("MCP_CAT_SUPPRESS_02: without suppress_auto_categories, addMemory receives false", async () => {
+  it("MCP_CAT_SUPPRESS_02: without suppress_auto_categories + categories provided, addMemory receives true (auto-default)", async () => {
     mockCheckDeduplication.mockResolvedValueOnce({ action: "add" } as any);
     mockAddMemory.mockResolvedValueOnce("cat-no-sup-id");
     mockProcessEntityExtraction.mockResolvedValueOnce(undefined);
@@ -1402,7 +1407,7 @@ describe("MCP add_memories — suppress_auto_categories", () => {
     expect(mockAddMemory).toHaveBeenCalledWith(
       "A normal memory",
       expect.objectContaining({
-        suppressAutoCategories: false,
+        suppressAutoCategories: true,
       })
     );
   });
@@ -1557,5 +1562,304 @@ describe("MCP add_memories — intra-batch dedup", () => {
     expect(parsed.stored).toBe(1);
     // INVALIDATE intent is not skipped — it processed independently
     expect(mockInvalidateMemories).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NEW: Improvement #1 — suppress_auto_categories auto-default
+// ---------------------------------------------------------------------------
+describe("MCP add_memories — auto-suppress categories when explicit categories provided", () => {
+  let client: Client;
+
+  beforeAll(async () => {
+    ({ client } = await setupClientServer());
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRunRead.mockReset();
+    mockRunRead.mockResolvedValue([]);
+    mockRunWrite.mockResolvedValue([]);
+    mockClassifyIntent.mockResolvedValue({ type: "STORE" as const });
+    mockSearchEntities.mockResolvedValue([]);
+  });
+
+  it("MCP_CAT_AUTO_SUPPRESS_01: categories provided + no suppress flag → auto-suppressed (true)", async () => {
+    mockCheckDeduplication.mockResolvedValueOnce({ action: "add" } as any);
+    mockAddMemory.mockResolvedValueOnce("auto-sup-id");
+    mockProcessEntityExtraction.mockResolvedValueOnce(undefined);
+
+    await client.callTool({
+      name: "add_memories",
+      arguments: { content: "Security audit finding", categories: ["Security", "Architecture"] },
+    });
+
+    expect(mockAddMemory).toHaveBeenCalledWith(
+      "Security audit finding",
+      expect.objectContaining({ suppressAutoCategories: true })
+    );
+  });
+
+  it("MCP_CAT_AUTO_SUPPRESS_02: categories provided + suppress=false → explicitly NOT suppressed", async () => {
+    mockCheckDeduplication.mockResolvedValueOnce({ action: "add" } as any);
+    mockAddMemory.mockResolvedValueOnce("no-sup-id");
+    mockProcessEntityExtraction.mockResolvedValueOnce(undefined);
+
+    await client.callTool({
+      name: "add_memories",
+      arguments: {
+        content: "Security finding with enrichment wanted",
+        categories: ["Security"],
+        suppress_auto_categories: false,
+      },
+    });
+
+    expect(mockAddMemory).toHaveBeenCalledWith(
+      "Security finding with enrichment wanted",
+      expect.objectContaining({ suppressAutoCategories: false })
+    );
+  });
+
+  it("MCP_CAT_AUTO_SUPPRESS_03: NO categories → suppress stays false (default)", async () => {
+    mockCheckDeduplication.mockResolvedValueOnce({ action: "add" } as any);
+    mockAddMemory.mockResolvedValueOnce("default-id");
+    mockProcessEntityExtraction.mockResolvedValueOnce(undefined);
+
+    await client.callTool({
+      name: "add_memories",
+      arguments: { content: "A plain memory without explicit categories" },
+    });
+
+    expect(mockAddMemory).toHaveBeenCalledWith(
+      "A plain memory without explicit categories",
+      expect.objectContaining({ suppressAutoCategories: false })
+    );
+  });
+
+  it("MCP_CAT_AUTO_SUPPRESS_04: empty categories array → suppress stays false", async () => {
+    mockCheckDeduplication.mockResolvedValueOnce({ action: "add" } as any);
+    mockAddMemory.mockResolvedValueOnce("empty-cat-id");
+    mockProcessEntityExtraction.mockResolvedValueOnce(undefined);
+
+    await client.callTool({
+      name: "add_memories",
+      arguments: { content: "Memory with empty categories", categories: [] },
+    });
+
+    expect(mockAddMemory).toHaveBeenCalledWith(
+      "Memory with empty categories",
+      expect.objectContaining({ suppressAutoCategories: false })
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NEW: Improvement #3 — TOUCH intent (refresh timestamp)
+// ---------------------------------------------------------------------------
+describe("MCP add_memories — TOUCH intent", () => {
+  let client: Client;
+
+  beforeAll(async () => {
+    ({ client } = await setupClientServer());
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRunRead.mockReset();
+    mockRunRead.mockResolvedValue([]);
+    mockRunWrite.mockResolvedValue([]);
+    mockClassifyIntent.mockResolvedValue({ type: "STORE" as const });
+    mockSearchEntities.mockResolvedValue([]);
+  });
+
+  it("MCP_TOUCH_01: TOUCH intent calls touchMemoryByDescription and returns touched count", async () => {
+    mockClassifyIntent.mockResolvedValueOnce({
+      type: "TOUCH" as const,
+      target: "CLUSTER-ISOLATION-01 is still unfixed",
+    });
+    mockTouchMemory.mockResolvedValueOnce({ id: "touched-id", content: "CLUSTER-ISOLATION-01 finding" });
+
+    const result = await client.callTool({
+      name: "add_memories",
+      arguments: { content: "Still relevant: CLUSTER-ISOLATION-01" },
+    });
+
+    const parsed = parseToolResult(result as any) as any;
+    expect(parsed.touched).toBe(1);
+    expect(mockTouchMemory).toHaveBeenCalledWith("CLUSTER-ISOLATION-01 is still unfixed", "test-user");
+  });
+
+  it("MCP_TOUCH_02: TOUCH with no match returns graceful empty response", async () => {
+    mockClassifyIntent.mockResolvedValueOnce({
+      type: "TOUCH" as const,
+      target: "nonexistent finding",
+    });
+    mockTouchMemory.mockResolvedValueOnce(null);
+
+    const result = await client.callTool({
+      name: "add_memories",
+      arguments: { content: "Still relevant: nonexistent finding" },
+    });
+
+    const parsed = parseToolResult(result as any) as any;
+    // No touched count when nothing was found
+    expect(parsed.touched).toBeUndefined();
+    expect(mockTouchMemory).toHaveBeenCalled();
+  });
+
+  it("MCP_TOUCH_03: TOUCH does not trigger dedup pipeline or addMemory", async () => {
+    mockClassifyIntent.mockResolvedValueOnce({
+      type: "TOUCH" as const,
+      target: "some finding",
+    });
+    mockTouchMemory.mockResolvedValueOnce({ id: "t-id", content: "some finding" });
+
+    await client.callTool({
+      name: "add_memories",
+      arguments: { content: "Confirm: some finding still applies" },
+    });
+
+    expect(mockCheckDeduplication).not.toHaveBeenCalled();
+    expect(mockAddMemory).not.toHaveBeenCalled();
+    expect(mockSupersedeMemory).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NEW: Improvement #4 — RESOLVE intent (mark as resolved)
+// ---------------------------------------------------------------------------
+describe("MCP add_memories — RESOLVE intent", () => {
+  let client: Client;
+
+  beforeAll(async () => {
+    ({ client } = await setupClientServer());
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRunRead.mockReset();
+    mockRunRead.mockResolvedValue([]);
+    mockRunWrite.mockResolvedValue([]);
+    mockClassifyIntent.mockResolvedValue({ type: "STORE" as const });
+    mockSearchEntities.mockResolvedValue([]);
+  });
+
+  it("MCP_RESOLVE_01: RESOLVE intent calls resolveMemoryByDescription and returns resolved count", async () => {
+    mockClassifyIntent.mockResolvedValueOnce({
+      type: "RESOLVE" as const,
+      target: "TTL cache issue in config helpers",
+    });
+    mockResolveMemory.mockResolvedValueOnce({ id: "resolved-id", content: "CONFIG-NO-TTL-CACHE-01" });
+
+    const result = await client.callTool({
+      name: "add_memories",
+      arguments: { content: "Resolved: CONFIG-NO-TTL-CACHE-01" },
+    });
+
+    const parsed = parseToolResult(result as any) as any;
+    expect(parsed.resolved).toBe(1);
+    expect(mockResolveMemory).toHaveBeenCalledWith("TTL cache issue in config helpers", "test-user");
+  });
+
+  it("MCP_RESOLVE_02: RESOLVE with no match returns graceful empty response", async () => {
+    mockClassifyIntent.mockResolvedValueOnce({
+      type: "RESOLVE" as const,
+      target: "nonexistent bug",
+    });
+    mockResolveMemory.mockResolvedValueOnce(null);
+
+    const result = await client.callTool({
+      name: "add_memories",
+      arguments: { content: "Mark as fixed: nonexistent bug" },
+    });
+
+    const parsed = parseToolResult(result as any) as any;
+    expect(parsed.resolved).toBeUndefined();
+    expect(mockResolveMemory).toHaveBeenCalled();
+  });
+
+  it("MCP_RESOLVE_03: RESOLVE does not trigger dedup pipeline or addMemory", async () => {
+    mockClassifyIntent.mockResolvedValueOnce({
+      type: "RESOLVE" as const,
+      target: "some bug",
+    });
+    mockResolveMemory.mockResolvedValueOnce({ id: "r-id", content: "some bug" });
+
+    await client.callTool({
+      name: "add_memories",
+      arguments: { content: "This has been fixed: some bug" },
+    });
+
+    expect(mockCheckDeduplication).not.toHaveBeenCalled();
+    expect(mockAddMemory).not.toHaveBeenCalled();
+    expect(mockSupersedeMemory).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NEW: Improvement #2 — Tag search recall (minimum topK)
+// ---------------------------------------------------------------------------
+describe("MCP search_memory — tag recall minimum topK", () => {
+  let client: Client;
+
+  beforeAll(async () => {
+    ({ client } = await setupClientServer());
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRunRead.mockReset();
+    mockRunRead.mockResolvedValue([]);
+    mockRunWrite.mockResolvedValue([]);
+    mockSearchEntities.mockResolvedValue([]);
+  });
+
+  it("MCP_TAG_RECALL_MIN_01: tag filter enforces minimum topK of 200 regardless of limit", async () => {
+    mockHybridSearch.mockResolvedValueOnce([]);
+
+    await client.callTool({
+      name: "search_memory",
+      arguments: { query: "security findings", tag: "audit-session-19", limit: 5 },
+    });
+
+    // With limit=5, normal tag multiplier would be 5*10=50
+    // But minimum topK of 200 should be used instead
+    expect(mockHybridSearch).toHaveBeenCalledWith("security findings", {
+      userId: "test-user",
+      topK: 200,
+      mode: "hybrid",
+    });
+  });
+
+  it("MCP_TAG_RECALL_MIN_02: without tag, topK uses normal multiplier (no 200 minimum)", async () => {
+    mockHybridSearch.mockResolvedValueOnce([]);
+
+    await client.callTool({
+      name: "search_memory",
+      arguments: { query: "security findings", limit: 5 },
+    });
+
+    // No tag → multiplier is 1, topK = 5*1 = 5
+    expect(mockHybridSearch).toHaveBeenCalledWith("security findings", {
+      userId: "test-user",
+      topK: 5,
+      mode: "hybrid",
+    });
+  });
+
+  it("MCP_TAG_RECALL_MIN_03: tag with high limit uses 10x multiplier when > 200", async () => {
+    mockHybridSearch.mockResolvedValueOnce([]);
+
+    await client.callTool({
+      name: "search_memory",
+      arguments: { query: "findings", tag: "project-x", limit: 50 },
+    });
+
+    // limit=50, tag multiplier 10x = 500 > 200, use 500
+    expect(mockHybridSearch).toHaveBeenCalledWith("findings", {
+      userId: "test-user",
+      topK: 500,
+      mode: "hybrid",
+    });
   });
 });

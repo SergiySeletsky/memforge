@@ -44,6 +44,10 @@ import { classifyIntent, mightBeCommand } from "@/lib/mcp/classify";
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // mockReset() clears the mockResolvedValueOnce queue — clearAllMocks() does NOT.
+  // Without this, tests that don't trigger mightBeCommand() leave queued mocks
+  // that leak into subsequent tests, causing cascading failures.
+  mockCreate.mockReset();
   delete process.env.LLM_AZURE_DEPLOYMENT;
   delete process.env.MEMFORGE_CATEGORIZATION_MODEL;
 });
@@ -90,6 +94,40 @@ describe("mightBeCommand â€” regex pre-filter", () => {
 
   it("CLASSIFY_REGEX_10: past observation without command verbs is not a command", () => {
     expect(mightBeCommand("My previous employer was Globex")).toBe(false);
+  });
+
+  // --- TOUCH patterns ---
+  it("CLASSIFY_REGEX_TOUCH_01: 'still relevant' triggers command path", () => {
+    expect(mightBeCommand("Still relevant: CLUSTER-ISOLATION-01")).toBe(true);
+  });
+
+  it("CLASSIFY_REGEX_TOUCH_02: 'confirm' triggers command path", () => {
+    expect(mightBeCommand("Confirm this finding is still unfixed")).toBe(true);
+  });
+
+  it("CLASSIFY_REGEX_TOUCH_03: 'still valid' triggers command path", () => {
+    expect(mightBeCommand("This still applies to the current architecture")).toBe(true);
+  });
+
+  it("CLASSIFY_REGEX_TOUCH_04: 'reconfirm' triggers command path", () => {
+    expect(mightBeCommand("Reconfirm: API-APPS-NO-USER-ANCHOR-01")).toBe(true);
+  });
+
+  // --- RESOLVE patterns ---
+  it("CLASSIFY_REGEX_RESOLVE_01: 'resolved' triggers command path", () => {
+    expect(mightBeCommand("Resolved: CONFIG-NO-TTL-CACHE-01")).toBe(true);
+  });
+
+  it("CLASSIFY_REGEX_RESOLVE_02: 'mark as fixed' triggers command path", () => {
+    expect(mightBeCommand("Mark as fixed: the N+1 query issue")).toBe(true);
+  });
+
+  it("CLASSIFY_REGEX_RESOLVE_03: 'has been fixed' triggers command path", () => {
+    expect(mightBeCommand("The entity dedup bug has been fixed")).toBe(true);
+  });
+
+  it("CLASSIFY_REGEX_RESOLVE_04: 'mark as done' triggers command path", () => {
+    expect(mightBeCommand("Mark as done: implement TTL cache")).toBe(true);
   });
 });
 
@@ -276,6 +314,64 @@ describe("classifyIntent â€” LLM path", () => {
     });
 
     const result = await classifyIntent("stop tracking someone");
+    expect(result).toEqual({ type: "STORE" });
+  });
+
+  // --- TOUCH LLM tests ---
+  it("CLASSIFY_LLM_TOUCH_01: LLM returns TOUCH with target → TOUCH intent", async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ message: { content: '{"intent":"TOUCH","target":"CLUSTER-ISOLATION-01 is still unfixed"}' } }],
+    });
+
+    const result = await classifyIntent("Still relevant: CLUSTER-ISOLATION-01");
+    expect(result).toEqual({ type: "TOUCH", target: "CLUSTER-ISOLATION-01 is still unfixed" });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("CLASSIFY_LLM_TOUCH_02: LLM returns TOUCH without target → falls back to STORE", async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ message: { content: '{"intent":"TOUCH"}' } }],
+    });
+
+    const result = await classifyIntent("Confirm this still applies");
+    expect(result).toEqual({ type: "STORE" });
+  });
+
+  it("CLASSIFY_LLM_TOUCH_03: LLM returns TOUCH with non-string target → falls back to STORE", async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ message: { content: '{"intent":"TOUCH","target":123}' } }],
+    });
+
+    const result = await classifyIntent("Reconfirm that finding");
+    expect(result).toEqual({ type: "STORE" });
+  });
+
+  // --- RESOLVE LLM tests ---
+  it("CLASSIFY_LLM_RESOLVE_01: LLM returns RESOLVE with target → RESOLVE intent", async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ message: { content: '{"intent":"RESOLVE","target":"TTL cache issue in config helpers"}' } }],
+    });
+
+    const result = await classifyIntent("Resolved: CONFIG-NO-TTL-CACHE-01");
+    expect(result).toEqual({ type: "RESOLVE", target: "TTL cache issue in config helpers" });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("CLASSIFY_LLM_RESOLVE_02: LLM returns RESOLVE without target → falls back to STORE", async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ message: { content: '{"intent":"RESOLVE"}' } }],
+    });
+
+    const result = await classifyIntent("Mark as fixed: that bug");
+    expect(result).toEqual({ type: "STORE" });
+  });
+
+  it("CLASSIFY_LLM_RESOLVE_03: LLM returns RESOLVE with non-string target → falls back to STORE", async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ message: { content: '{"intent":"RESOLVE","target":true}' } }],
+    });
+
+    const result = await classifyIntent("This has been fixed now");
     expect(result).toEqual({ type: "STORE" });
   });
 });

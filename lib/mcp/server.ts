@@ -31,7 +31,7 @@ import { runRead, runWrite } from "@/lib/db/memgraph";
 import { checkDeduplication } from "@/lib/dedup";
 import { processEntityExtraction } from "@/lib/entities/worker";
 import { classifyIntent } from "@/lib/mcp/classify";
-import { searchEntities, invalidateMemoriesByDescription, deleteEntityByNameOrId } from "@/lib/mcp/entities";
+import { searchEntities, invalidateMemoriesByDescription, deleteEntityByNameOrId, touchMemoryByDescription, resolveMemoryByDescription } from "@/lib/mcp/entities";
 import type { EntityProfile } from "@/lib/mcp/entities";
 import { hybridSearch } from "@/lib/search/hybrid";
 
@@ -53,7 +53,7 @@ const searchMemorySchema = {
   offset: z.number().optional().describe("Number of memories to skip -- used for paginating browse results (no query). Default: 0"),
   category: z.string().optional().describe("Filter to memories in this category only"),
   created_after: z.string().optional().describe("ISO date -- only return memories created after this date (e.g. '2026-02-01')"),
-  include_entities: z.boolean().optional().describe("Include matching entity profiles in search results (default: true for search mode). Set false to skip entity enrichment for faster responses."),
+  include_entities: z.boolean().optional().describe("Include matching entity profiles in search results (default: true for search mode). Set to false for faster keyword-only recall when entity context is not needed."),
   tag: z.string().optional().describe("Exact tag filter -- returns only memories tagged with this string (case-insensitive). Tags are set via add_memories(tags: [...])."),
 };
 const addMemoriesSchema = {
@@ -87,8 +87,8 @@ const addMemoriesSchema = {
     .boolean()
     .optional()
     .describe(
-      "Skip automatic category suggestions. Use when you provide explicit categories " +
-      "and want predictable grouping without extras. Default: false."
+      "Skip automatic category suggestions. Auto-defaults to true when you provide explicit categories " +
+      "for predictable grouping. Set explicitly to false to keep auto-enrichment alongside your categories."
     ),
 };
 
@@ -107,7 +107,9 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
         "The system understands natural language intent:\n" +
         "• Statements → remembered (duplicates automatically detected and merged)\n" +
         "• 'Forget X' / 'Remove memories about Y' → matching memories removed\n" +
-        "• 'Stop tracking [entity]' → entity and its connections cleaned up\n\n" +
+        "• 'Stop tracking [entity]' → entity and its connections cleaned up\n" +
+        "• 'Still relevant: X' / 'Confirm X still applies' → timestamp refreshed (TOUCH)\n" +
+        "• 'Resolved: X' / 'X has been fixed' → memory archived as resolved\n\n" +
         "Accepts a single string or an array for batch writes.",
       inputSchema: addMemoriesSchema,
     },
@@ -146,7 +148,9 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
           | { id: string;   memory: string; event: "ADD" | "SUPERSEDE" | "SKIP_DUPLICATE" }
           | { id: null;     memory: string; event: "ERROR"; error: string }
           | { id: null;     memory: string; event: "INVALIDATE"; invalidated: Array<{ id: string; content: string }> }
-          | { id: null;     memory: string; event: "DELETE_ENTITY"; deleted: { entity: string; mentionEdgesRemoved: number; relationshipsRemoved: number } | null };
+          | { id: null;     memory: string; event: "DELETE_ENTITY"; deleted: { entity: string; mentionEdgesRemoved: number; relationshipsRemoved: number } | null }
+          | { id: string | null; memory: string; event: "TOUCH"; touched: { id: string; content: string } | null }
+          | { id: string | null; memory: string; event: "RESOLVE"; resolved: { id: string; content: string } | null };
         const results: MemoryResult[] = [];
 
         let prevExtractionPromise: Promise<void> | null = null;
@@ -198,6 +202,20 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
               continue;
             }
 
+            if (intent.type === "TOUCH") {
+              console.log(`[MCP] add_memories TOUCH target="${intent.target}"`);
+              const touched = await touchMemoryByDescription(intent.target, userId);
+              results.push({ id: touched?.id ?? null, memory: text, event: "TOUCH", touched });
+              continue;
+            }
+
+            if (intent.type === "RESOLVE") {
+              console.log(`[MCP] add_memories RESOLVE target="${intent.target}"`);
+              const resolved = await resolveMemoryByDescription(intent.target, userId);
+              results.push({ id: resolved?.id ?? null, memory: text, event: "RESOLVE", resolved });
+              continue;
+            }
+
             // Step 1: Deduplication pre-write hook (STORE intent)
             // MCP-BATCH-DEDUP: Check for intra-batch exact duplicate first
             const normalizedText = normalizeBatchText(text);
@@ -225,7 +243,10 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
                 appName: clientName,
                 metadata: { source_app: "memforge", mcp_client: clientName },
                 tags: explicitTags,
-                suppressAutoCategories: suppressAutoCategories ?? false,
+                // MCP-CAT-SUPPRESS-AUTO: When caller provides explicit categories
+                // and doesn't explicitly set suppress_auto_categories, auto-default
+                // to true for predictable grouping without LLM-added noise.
+                suppressAutoCategories: suppressAutoCategories ?? (explicitCategories != null && explicitCategories.length > 0),
               });
             }
 
@@ -302,6 +323,16 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
         // Delete entity: name of the deleted entity
         const deletedEntity = results.find(r => r.event === "DELETE_ENTITY");
         if (deletedEntity) response.deleted = (deletedEntity as any).deleted?.entity ?? null;
+
+        // Touch: count of memories whose timestamp was refreshed
+        const touchedCount = results
+          .filter(r => r.event === "TOUCH" && (r as any).touched !== null).length;
+        if (touchedCount) response.touched = touchedCount;
+
+        // Resolve: count of memories marked as resolved
+        const resolvedCount = results
+          .filter(r => r.event === "RESOLVE" && (r as any).resolved !== null).length;
+        if (resolvedCount) response.resolved = resolvedCount;
 
         return {
           content: [{ type: "text", text: JSON.stringify(response) }],
@@ -406,8 +437,12 @@ export function createMcpServer(userId: string, clientName: string): McpServer {
         // MCP-FILTER-02 fix: tag post-filter has lowest selectivity (few memories
         // carry a given tag), so use a higher multiplier to compensate.
         // category/date filters are less aggressive â€” 5Ã— suffices.
+        // MCP-TAG-RECALL-02: Guarantee minimum topK of 200 when tag filter is active
+        // to match browse-mode recall for typical stores (<200 tagged memories).
         const fetchMultiplier = tag ? 10 : (category || created_after) ? 5 : 1;
-        const fetchLimit = effectiveLimit * fetchMultiplier;
+        const fetchLimit = tag
+          ? Math.max(effectiveLimit * fetchMultiplier, 200)
+          : effectiveLimit * fetchMultiplier;
         console.log(`[MCP] search_memory search userId=${userId} query="${query}" limit=${effectiveLimit} fetchLimit=${fetchLimit}`);
 
         // Spec 02: hybrid search (BM25 + vector + RRF)

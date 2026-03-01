@@ -19,7 +19,9 @@ import { getLLMClient } from "@/lib/ai/client";
 export type MemoryIntent =
   | { type: "STORE" }
   | { type: "INVALIDATE"; target: string }
-  | { type: "DELETE_ENTITY"; entityName: string };
+  | { type: "DELETE_ENTITY"; entityName: string }
+  | { type: "TOUCH"; target: string }
+  | { type: "RESOLVE"; target: string };
 
 // ---------------------------------------------------------------------------
 // Fast-path regex pre-filter
@@ -33,6 +35,10 @@ const COMMAND_PATTERNS = [
   /\b(no\s+longer\s+relevant|mark\s+as\s+irrelevant|mark\s+as\s+outdated)\b/i,
   /\b(invalidate|mark\s+as\s+(deleted|removed))\b/i,
   /\b(untrack|remove\s+entity|delete\s+entity|stop\s+tracking\s+(person|entity|concept))\b/i,
+  // TOUCH: confirm existing memory is still valid (update timestamp only)
+  /\b(still\s+(relevant|unfixed|open|valid|pending|applies|true)|confirm(ed)?|reconfirm|touch\s+memor|refresh\s+memor)\b/i,
+  // RESOLVE: mark existing memory as resolved/fixed/addressed
+  /\b(resolved|mark\s+as\s+(resolved|fixed|done|complete|closed)|has\s+been\s+(fixed|resolved|addressed|completed))\b/i,
 ];
 
 /** Returns true when text might be a command (needs LLM classification). */
@@ -49,11 +55,15 @@ const CLASSIFY_PROMPT = `You are an intent classifier for a memory system. Given
 - STORE: A fact, preference, decision, observation, or piece of information to remember. This is the overwhelmingly common case.
 - INVALIDATE: A request to forget, remove, or mark as irrelevant one or more existing memories. The user is telling the system to stop remembering something specific.
 - DELETE_ENTITY: A request to stop tracking a specific person, concept, organization, or entity entirely. Not just updating a fact â€” removing the entity itself.
+- TOUCH: A confirmation that an existing memory/finding is still relevant or valid. The user is NOT adding new information — just refreshing the timestamp. Examples: "still unfixed", "confirm X is still open", "this still applies".
+- RESOLVE: Marking an existing memory/finding as resolved, fixed, addressed, or completed. The memory should be archived (not deleted). Examples: "X has been fixed", "resolved: Y", "mark Z as done".
 
 Respond with EXACTLY one JSON object (no markdown, no fences):
   {"intent":"STORE"}
   {"intent":"INVALIDATE","target":"description of what to forget"}
-  {"intent":"DELETE_ENTITY","entityName":"name of entity to remove"}`;
+  {"intent":"DELETE_ENTITY","entityName":"name of entity to remove"}
+  {"intent":"TOUCH","target":"description of the memory to refresh"}
+  {"intent":"RESOLVE","target":"description of the memory that was resolved"}`;
 
 // ---------------------------------------------------------------------------
 // Classifier
@@ -98,6 +108,12 @@ export async function classifyIntent(text: string): Promise<MemoryIntent> {
     }
     if (parsed.intent === "DELETE_ENTITY" && typeof parsed.entityName === "string") {
       return { type: "DELETE_ENTITY", entityName: parsed.entityName };
+    }
+    if (parsed.intent === "TOUCH" && typeof parsed.target === "string") {
+      return { type: "TOUCH", target: parsed.target };
+    }
+    if (parsed.intent === "RESOLVE" && typeof parsed.target === "string") {
+      return { type: "RESOLVE", target: parsed.target };
     }
 
     return { type: "STORE" };

@@ -278,3 +278,76 @@ export async function deleteEntityByNameOrId(
 
   return { entity: name, mentionEdgesRemoved: mentionCount, relationshipsRemoved: relationCount };
 }
+
+// ---------------------------------------------------------------------------
+// touchMemoryByDescription — refresh timestamp on best-matching memory
+// ---------------------------------------------------------------------------
+
+/**
+ * Find the best-matching memory for a description and update its `updatedAt`
+ * timestamp without modifying content. Used by add_memories for the TOUCH intent.
+ * Returns the touched memory for the response payload, or null if no match.
+ */
+export async function touchMemoryByDescription(
+  description: string,
+  userId: string
+): Promise<{ id: string; content: string } | null> {
+  const matches = await hybridSearch(description, {
+    userId,
+    topK: 5,
+    mode: "hybrid",
+  });
+
+  if (matches.length === 0) return null;
+
+  // Only touch the best match if it has reasonable relevance
+  const RRF_THRESHOLD = 0.015;
+  const best = matches[0];
+  if (best.rrfScore < RRF_THRESHOLD) return null;
+
+  const now = new Date().toISOString();
+  await runWrite(
+    `MATCH (u:User {userId: $userId})-[:HAS_MEMORY]->(m:Memory {id: $memId})
+     SET m.updatedAt = $now`,
+    { userId, memId: best.id, now }
+  );
+
+  return { id: best.id, content: best.content };
+}
+
+// ---------------------------------------------------------------------------
+// resolveMemoryByDescription — mark best-matching memory as resolved
+// ---------------------------------------------------------------------------
+
+/**
+ * Find the best-matching memory for a description and mark it as resolved.
+ * Sets `state = 'resolved'` and `invalidAt = now` so it's excluded from
+ * active queries but preserved in the graph. Used by add_memories for the
+ * RESOLVE intent.
+ * Returns the resolved memory for the response payload, or null if no match.
+ */
+export async function resolveMemoryByDescription(
+  description: string,
+  userId: string
+): Promise<{ id: string; content: string } | null> {
+  const matches = await hybridSearch(description, {
+    userId,
+    topK: 5,
+    mode: "hybrid",
+  });
+
+  if (matches.length === 0) return null;
+
+  const RRF_THRESHOLD = 0.015;
+  const best = matches[0];
+  if (best.rrfScore < RRF_THRESHOLD) return null;
+
+  const now = new Date().toISOString();
+  await runWrite(
+    `MATCH (u:User {userId: $userId})-[:HAS_MEMORY]->(m:Memory {id: $memId})
+     SET m.state = 'resolved', m.invalidAt = $now, m.updatedAt = $now`,
+    { userId, memId: best.id, now }
+  );
+
+  return { id: best.id, content: best.content };
+}

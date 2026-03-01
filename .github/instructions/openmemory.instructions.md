@@ -16,14 +16,16 @@ The system understands natural language intent:
 - Statements, facts, decisions --> **remembered** (duplicates auto-detected and merged)
 - "Forget X" / "Remove memories about Y" --> matching memories **removed**
 - "Stop tracking entity Z" --> entity and its connections **cleaned up**
+- "Still relevant: X" / "Confirm X still applies" --> timestamp refreshed (**TOUCH**)
+- "Resolved: X" / "X has been fixed" --> memory archived as resolved (**RESOLVE**)
 
 **Parameters:**
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `content` | `string \| string[]` | Yes | What to remember. Single string or array for batch writes. |
-| `categories` | `string[]` | | Semantic labels for organization (e.g. `["Architecture", "Security"]`). Auto-assigned when omitted. |
+| `categories` | `string[]` | | Semantic labels for organization (e.g. `["Architecture", "Security"]`). Auto-assigned when omitted. When provided, `suppress_auto_categories` auto-defaults to `true`. |
 | `tags` | `string[]` | | Exact identifiers you control for precise filtering (e.g. `["project-x", "session-5"]`). Never auto-assigned. |
-| `suppress_auto_categories` | `boolean` | | Skip automatic category suggestions when you provide explicit categories. Default: `false`. |
+| `suppress_auto_categories` | `boolean` | | Skip automatic category suggestions. Auto-defaults to `true` when `categories` is provided. Set explicitly to `false` to keep LLM enrichment alongside your categories. |
 
 **Response (minimal -- no input echo):**
 ```jsonc
@@ -32,6 +34,8 @@ The system understands natural language intent:
 // With errors:           {"stored": 2, "ids": ["a","c"], "errors": [{"index": 1, "message": "..."}]}
 // Invalidate command:    {"invalidated": 2}
 // Delete entity command: {"deleted": "Alice"}
+// Touch command:         {"touched": 1}
+// Resolve command:       {"resolved": 1}
 // Empty input:           {}
 ```
 Only non-zero counts appear. `ids` covers stored + superseded items. Errors carry the input index for correlation.
@@ -100,6 +104,8 @@ Two modes:
 | Hit a bug or edge case | `search_memory` then `add_memories` | Check for known issues, then store the solution |
 | Want to see everything stored | `search_memory` (no query) | Browse mode -- full inventory |
 | Need project-specific context | `search_memory(tag: "repo-name")` | Filter to one project |
+| Confirming a prior finding still applies | `add_memories` | `"Still relevant: auth uses JWT"` -- refreshes timestamp |
+| Marking a tracked issue as fixed | `add_memories` | `"Resolved: CORS bug in /api/health"` -- archives the memory |
 
 **Key principle:** Search 2-3 times with different phrasings before acting. Memory recall improves with varied queries.
 
